@@ -134,15 +134,15 @@ public class Renderer {
                     int id = chunk.getBlock(x, y, z);
                     if (id == Block.AIR) continue;
                     Acc acc = accs.computeIfAbsent(id, k -> new Acc());
-                    // For each face, add if neighbor is air or out of bounds
+                    // For each face, add if neighbor is air. Use world lookup to handle cross-chunk neighbors correctly.
                     for (int f = 0; f < 6; f++) {
-                        int nx = x + dirs[f][0];
-                        int ny = y + dirs[f][1];
-                        int nz = z + dirs[f][2];
-                        boolean neighborSolid = false;
-                        if (nx >= 0 && nx < Chunk.CHUNK_X && ny >= 0 && ny < Chunk.CHUNK_Y && nz >= 0 && nz < Chunk.CHUNK_Z) {
-                            neighborSolid = chunk.getBlock(nx, ny, nz) != Block.AIR;
-                        }
+                        int wx = chunk.getOriginX() + x;
+                        int wy = y;
+                        int wz = chunk.getOriginZ() + z;
+                        int nwx = wx + dirs[f][0];
+                        int nwy = wy + dirs[f][1];
+                        int nwz = wz + dirs[f][2];
+                        boolean neighborSolid = (world != null) && world.isSolid(nwx, nwy, nwz);
                         if (neighborSolid) continue;
                         // Add face to the accumulator of this block id
                         addFace(acc.verts, acc.inds, x, y, z, f, normals[f], acc.indexOffset);
