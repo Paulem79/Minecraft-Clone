@@ -1,14 +1,14 @@
-package com.example.mc.engine.renderer;
+package ovh.paulem.mc.engine.renderer;
 
-import com.example.mc.engine.Camera;
-import com.example.mc.engine.Window;
-import com.example.mc.engine.renderer.texture.OverlayTexture;
-import com.example.mc.engine.renderer.texture.Texture;
-import com.example.mc.engine.renderer.texture.TintTexture;
-import com.example.mc.world.Biome;
-import com.example.mc.world.block.Block;
-import com.example.mc.world.Chunk;
-import com.example.mc.world.World;
+import ovh.paulem.mc.engine.Camera;
+import ovh.paulem.mc.engine.Window;
+import ovh.paulem.mc.engine.renderer.texture.OverlayTexture;
+import ovh.paulem.mc.engine.renderer.texture.Texture;
+import ovh.paulem.mc.engine.renderer.texture.TintTexture;
+import ovh.paulem.mc.world.Biome;
+import ovh.paulem.mc.world.block.Block;
+import ovh.paulem.mc.world.Chunk;
+import ovh.paulem.mc.world.World;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.lwjgl.opengl.GL;

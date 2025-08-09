@@ -1,10 +1,10 @@
-package com.example.mc;
+package ovh.paulem.mc;
 
-import com.example.mc.engine.Camera;
-import com.example.mc.engine.Player;
-import com.example.mc.engine.Window;
-import com.example.mc.engine.renderer.Renderer;
-import com.example.mc.world.World;
+import ovh.paulem.mc.engine.Camera;
+import ovh.paulem.mc.engine.Player;
+import ovh.paulem.mc.engine.Window;
+import ovh.paulem.mc.engine.renderer.Renderer;
+import ovh.paulem.mc.world.World;
 import org.joml.Vector2d;
 import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFWErrorCallback;

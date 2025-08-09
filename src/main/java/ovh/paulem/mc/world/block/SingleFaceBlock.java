@@ -1,4 +1,4 @@
-package com.example.mc.world.block;
+package ovh.paulem.mc.world.block;
 
 public class SingleFaceBlock extends Block {
     private final boolean transparent;

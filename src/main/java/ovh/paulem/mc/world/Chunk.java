@@ -1,7 +1,7 @@
-package com.example.mc.world;
+package ovh.paulem.mc.world;
 
-import com.example.mc.world.block.Block;
-import com.example.mc.world.block.Blocks;
+import ovh.paulem.mc.world.block.Block;
+import ovh.paulem.mc.world.block.Blocks;
 
 public class Chunk {
     public static final int CHUNK_X = 16;

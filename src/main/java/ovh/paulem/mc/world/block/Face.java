@@ -1,4 +1,4 @@
-package com.example.mc.world.block;
+package ovh.paulem.mc.world.block;
 
 /**
  * Represents the six faces of a cube. The index mapping matches the existing

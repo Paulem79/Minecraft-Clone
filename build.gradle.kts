@@ -1,10 +1,10 @@
 plugins {
-    `java`
+    java
     application
 }
 
-group = "ovh.paulem"
-version = "1.0-SNAPSHOT"
+group = "ovh.paulem.mc"
+version = "1.0"
 
 repositories {
     mavenCentral()
@@ -34,7 +34,7 @@ dependencies {
 
 application {
     // Correction du nom de la classe principale
-    mainClass.set("com.example.mc.Main")
+    mainClass.set(project.group.toString() + ".Main")
 }
 
 java {

@@ -1,4 +1,4 @@
-package com.example.mc.world;
+package ovh.paulem.mc.world;
 
 /**
  * Simple biome definition. Defines colors for grass and foliage (leaves).

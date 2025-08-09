@@ -1,4 +1,4 @@
-package com.example.mc.engine.renderer;
+package ovh.paulem.mc.engine.renderer;
 
 import org.lwjgl.system.MemoryUtil;
 

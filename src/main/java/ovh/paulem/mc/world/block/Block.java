@@ -1,8 +1,8 @@
-package com.example.mc.world.block;
+package ovh.paulem.mc.world.block;
 
-import com.example.mc.engine.renderer.texture.Texture;
+import ovh.paulem.mc.engine.renderer.texture.Texture;
 
-import static com.example.mc.world.block.Blocks.AIR;
+import static ovh.paulem.mc.world.block.Blocks.AIR;
 
 public abstract class Block {
     protected final String name;

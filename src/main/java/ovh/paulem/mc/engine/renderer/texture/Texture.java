@@ -1,4 +1,4 @@
-package com.example.mc.engine.renderer.texture;
+package ovh.paulem.mc.engine.renderer.texture;
 
 import org.lwjgl.stb.STBImage;
 

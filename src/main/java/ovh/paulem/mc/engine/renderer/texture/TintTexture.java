@@ -1,4 +1,4 @@
-package com.example.mc.engine.renderer.texture;
+package ovh.paulem.mc.engine.renderer.texture;
 
 /**
  * Texture qui peut être teintée par une couleur spécifique (biome)

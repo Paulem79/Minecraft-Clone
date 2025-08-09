@@ -1,4 +1,4 @@
-package com.example.mc.math;
+package ovh.paulem.mc.math;
 
 import java.io.Serial;
 import java.io.Serializable;

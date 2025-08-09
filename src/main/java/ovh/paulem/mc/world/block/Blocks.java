@@ -1,4 +1,4 @@
-package com.example.mc.world.block;
+package ovh.paulem.mc.world.block;
 
 import java.util.HashMap;
 import java.util.Map;

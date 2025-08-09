@@ -1,8 +1,8 @@
-package com.example.mc.world;
+package ovh.paulem.mc.world;
 
-import com.example.mc.util.PerlinNoise;
-import com.example.mc.world.block.Block;
-import com.example.mc.world.block.Blocks;
+import ovh.paulem.mc.util.PerlinNoise;
+import ovh.paulem.mc.world.block.Block;
+import ovh.paulem.mc.world.block.Blocks;
 
 import java.util.*;
 import java.util.concurrent.*;

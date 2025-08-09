@@ -1,4 +1,4 @@
-package com.example.mc.engine;
+package ovh.paulem.mc.engine;
 
 import org.joml.Matrix4f;
 

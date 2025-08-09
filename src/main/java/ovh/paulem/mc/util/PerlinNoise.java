@@ -1,6 +1,6 @@
-package com.example.mc.util;
+package ovh.paulem.mc.util;
 
-import com.example.mc.math.FastRandom;
+import ovh.paulem.mc.math.FastRandom;
 
 public class PerlinNoise {
     private final int[] p = new int[512];

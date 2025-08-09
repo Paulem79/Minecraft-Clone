@@ -1,4 +1,4 @@
-package com.example.mc.world.block;
+package ovh.paulem.mc.world.block;
 
 public class OverlayTopFaceBlock extends TopFaceBlock {
     public OverlayTopFaceBlock(String name, int id) {

@@ -1,6 +1,6 @@
-package com.example.mc.engine;
+package ovh.paulem.mc.engine;
 
-import com.example.mc.world.World;
+import ovh.paulem.mc.world.World;
 import org.joml.Vector3f;
 
 public class Player {
