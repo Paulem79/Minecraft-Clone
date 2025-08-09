@@ -84,7 +84,7 @@ public class World {
     public void update(float playerX, float playerZ) {
         int pcx = Math.floorDiv((int)Math.floor(playerX), Chunk.CHUNK_X);
         int pcz = Math.floorDiv((int)Math.floor(playerZ), Chunk.CHUNK_Z);
-        ensureChunksAround(pcx, pcz, 20);
+        ensureChunksAround(pcx, pcz, 5);
         // Optional: could unload far chunks here to cap memory
     }
 

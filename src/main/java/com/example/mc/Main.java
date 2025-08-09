@@ -171,7 +171,7 @@ public class Main {
         if (world != null) {
             world.shutdown();
         }
-        renderer.cleanup();
+        renderer.shutdown();
         glfwDestroyWindow(window);
         glfwTerminate();
     }

@@ -3,7 +3,6 @@ package com.example.mc.engine.renderer;
 import com.example.mc.engine.Camera;
 import com.example.mc.engine.Window;
 import com.example.mc.world.block.Block;
-import com.example.mc.world.block.Blocks;
 import com.example.mc.world.Chunk;
 import com.example.mc.world.World;
 import org.joml.Matrix4f;
@@ -11,6 +10,7 @@ import org.joml.Vector3f;
 import org.lwjgl.opengl.GL;
 
 import java.util.*;
+import java.util.concurrent.*;
 
 import static org.lwjgl.opengl.GL11.*;
 
@@ -37,6 +37,11 @@ public class Renderer {
     // Queue of chunks that need mesh (re)build; processed with small budget per frame to avoid spikes
     private final ArrayDeque<Chunk> meshBuildQueue = new ArrayDeque<>();
     private int meshesPerFrameBudget = 2;
+
+    // Ajout d'un ExecutorService pour le meshing parallèle
+    private final ExecutorService meshExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+    // Map temporaire pour stocker les résultats de meshing asynchrone
+    private final Map<Chunk, Future<MeshBuildResult>> meshFutures = new ConcurrentHashMap<>();
 
     public void init() {
         // Active OpenGL
@@ -103,9 +108,30 @@ public class Renderer {
                 float qdist = (float)Math.sqrt(qdx * qdx + qdz * qdz);
                 boolean qGreedy = qdist > 80.0f;
                 int qver = qc.getVersion();
-                List<MeshBatch> qlist = buildChunkMeshes(qc, qGreedy);
-                meshCache.put(qc, new ChunkMesh(qlist, qGreedy, qver));
+                // Lancer la génération du mesh en tâche asynchrone si pas déjà en cours
+                if (!meshFutures.containsKey(qc)) {
+                    meshFutures.put(qc, meshExecutor.submit(() -> {
+                        RawMeshData raw = qGreedy ? buildChunkMeshesGreedyRaw(qc) : buildChunkMeshesNonGreedyRaw(qc);
+                        return new MeshBuildResult(raw, qGreedy, qver);
+                    }));
+                }
                 rebuilt++;
+            }
+            // Récupérer les résultats terminés et les placer dans le cache principal
+            Iterator<Map.Entry<Chunk, Future<MeshBuildResult>>> it = meshFutures.entrySet().iterator();
+            while (it.hasNext()) {
+                Map.Entry<Chunk, Future<MeshBuildResult>> entry = it.next();
+                Future<MeshBuildResult> future = entry.getValue();
+                if (future.isDone()) {
+                    try {
+                        MeshBuildResult result = future.get();
+                        List<MeshBatch> batches = buildMeshBatchesFromRaw(result.raw);
+                        meshCache.put(entry.getKey(), new ChunkMesh(batches, result.greedy, result.version));
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                    it.remove();
+                }
             }
 
             // Render all loaded chunks with per-chunk model transform
@@ -125,8 +151,8 @@ public class Renderer {
                 int ver = c.getVersion();
                 boolean needRebuild = (cm == null || cm.greedy != useGreedy || cm.version != ver);
                 if (needRebuild) {
-                    // enqueue if not already queued
-                    if (!meshBuildQueue.contains(c)) {
+                    // enqueue if not already queued or en cours de génération
+                    if (!meshBuildQueue.contains(c) && !meshFutures.containsKey(c)) {
                         meshBuildQueue.addLast(c);
                     }
                 }
@@ -370,80 +396,278 @@ public class Renderer {
         return out;
     }
 
-    // Adds a quad for a cube face at block (x,y,z) for face index f
-    // Vertex layout: pos(3), uv(2), normal(3)
-    private void addFace(List<Float> verts, List<Integer> inds, int x, int y, int z, int f, Vector3f normal, int indexOffset) {
-        float px = x;
-        float py = y;
-        float pz = z;
-        // Define 4 vertices per face depending on face index
-        float[][] corners;
-        switch (f) {
-            case 0: // +X (right)
-                // CCW when viewed from +X
-                corners = new float[][]{{px+1,py,  pz+1}, {px+1,py,  pz  }, {px+1,py+1,pz  }, {px+1,py+1,pz+1}};
-                break;
-            case 1: // -X (left)
-                // CCW when viewed from -X
-                corners = new float[][]{{px,  py,  pz  }, {px,  py,  pz+1}, {px,  py+1,pz+1}, {px,  py+1,pz  }};
-                break;
-            case 2: // +Y (top)
-                // Order to ensure CCW winding when viewed from above
-                corners = new float[][]{{px,  py+1,pz  }, {px,  py+1,pz+1}, {px+1,py+1,pz+1}, {px+1,py+1,pz  }};
-                break;
-            case 3: // -Y (bottom)
-                // Order to ensure CCW winding when viewed from below
-                corners = new float[][]{{px,  py,  pz  }, {px+1,py,  pz  }, {px+1,py,  pz+1}, {px,  py,  pz+1}};
-                break;
-            case 4: // +Z (front)
-                // CCW when viewed from +Z towards origin
-                corners = new float[][]{{px,  py,  pz+1}, {px+1,py,  pz+1}, {px+1,py+1,pz+1}, {px,  py+1,pz+1}};
-                break;
-            default: // -Z (back)
-                // CCW when viewed from -Z (outside)
-                corners = new float[][]{{px+1,py,  pz  }, {px,  py,  pz  }, {px,  py+1,pz  }, {px+1,py+1,pz  }};
-                break;
+    // Structure temporaire pour stocker les données brutes de mesh
+    private static class RawMeshData {
+        final Map<String, float[]> verticesByTexture;
+        final Map<String, int[]> indicesByTexture;
+        RawMeshData(Map<String, float[]> v, Map<String, int[]> i) {
+            this.verticesByTexture = v;
+            this.indicesByTexture = i;
         }
-        addQuad(verts, inds, corners[0], corners[1], corners[2], corners[3], normal, indexOffset);
     }
-
-    // Generic quad adder from 4 provided corners (CCW order as seen from outside)
-    // UVs are set 0..1 across the quad (stretched when greedy meshed)
-    private void addQuad(List<Float> verts, List<Integer> inds, float[] c0, float[] c1, float[] c2, float[] c3, Vector3f normal, int indexOffset) {
-        float[][] uvs = new float[][]{{0,0},{1,0},{1,1},{0,1}};
-        float[][] corners = new float[][]{c0, c1, c2, c3};
-        for (int i = 0; i < 4; i++) {
-            float[] c = corners[i];
-            verts.add(c[0]); verts.add(c[1]); verts.add(c[2]);
-            verts.add(uvs[i][0]); verts.add(uvs[i][1]);
-            verts.add(normal.x); verts.add(normal.y); verts.add(normal.z);
+    // Modifie buildChunkMeshesGreedy pour retourner RawMeshData
+    private RawMeshData buildChunkMeshesGreedyRaw(Chunk chunk) {
+        class Acc {
+            final List<Float> verts = new ArrayList<>();
+            final List<Integer> inds = new ArrayList<>();
+            int indexOffset = 0;
         }
-        inds.add(indexOffset + 0); inds.add(indexOffset + 1); inds.add(indexOffset + 2);
-        inds.add(indexOffset + 2); inds.add(indexOffset + 3); inds.add(indexOffset + 0);
-    }
+        Map<String, Acc> accs = new HashMap<>();
 
-    public void cleanup() {
-        // Cleanup legacy list
-        for (MeshBatch b : batches) {
-            if (b.mesh != null) b.mesh.cleanup();
-        }
-        // Cleanup cached chunk meshes
-        for (ChunkMesh cm : meshCache.values()) {
-            for (MeshBatch b : cm.list) {
-                if (b.mesh != null) b.mesh.cleanup();
+        // Directions: +/-X, +/-Y, +/-Z
+        int[][] dirs = new int[][]{
+                { 1, 0, 0}, {-1, 0, 0},
+                { 0, 1, 0}, { 0,-1, 0},
+                { 0, 0, 1}, { 0, 0,-1}
+        };
+        Vector3f[] normals = new Vector3f[]{
+                new Vector3f( 1, 0, 0), new Vector3f(-1, 0, 0),
+                new Vector3f( 0, 1, 0), new Vector3f( 0,-1, 0),
+                new Vector3f( 0, 0, 1), new Vector3f( 0, 0,-1)
+        };
+
+        // Greedy meshing per face direction f
+        for (int f = 0; f < 6; f++) {
+            final int U, V, W; // Dimensions per face orientation
+            // For each face, we define which axes are in-plane (u,v) and which is the slice axis (w)
+            // Also define normal for this face
+            Vector3f normal = normals[f];
+            int sizeX = Chunk.CHUNK_X;
+            int sizeY = Chunk.CHUNK_Y;
+            int sizeZ = Chunk.CHUNK_Z;
+            int uSize, vSize, wSize;
+            // Mapping functions depend on f
+            // We'll iterate slices along w, and for each build a u-v mask of texture strings
+            switch (f) {
+                case 0: // +X: plane (u=z, v=y), slices over x
+                case 1: // -X
+                    uSize = sizeZ; vSize = sizeY; wSize = sizeX;
+                    break;
+                case 2: // +Y: plane (u=x, v=z), slices over y
+                case 3: // -Y
+                    uSize = sizeX; vSize = sizeZ; wSize = sizeY;
+                    break;
+                default: // 4:+Z, 5:-Z -> plane (u=x, v=y), slices over z
+                    uSize = sizeX; vSize = sizeY; wSize = sizeZ;
+                    break;
+            }
+
+            for (int w = 0; w < wSize; w++) {
+                String[][] mask = new String[uSize][vSize];
+                // Fill mask with texture name when the face at (u,v,w) is visible
+                for (int v = 0; v < vSize; v++) {
+                    for (int u = 0; u < uSize; u++) {
+                        // Map (u,v,w) to chunk-local (x,y,z)
+                        int x, y, z;
+                        switch (f) {
+                            case 0: // +X face at x = w, neighbor at x+1
+                                x = w; y = v; z = u; break;
+                            case 1: // -X face at x = w, neighbor at x-1
+                                x = w; y = v; z = u; break;
+                            case 2: // +Y face at y = w, neighbor at y+1
+                                x = u; y = w; z = v; break;
+                            case 3: // -Y face at y = w, neighbor at y-1
+                                x = u; y = w; z = v; break;
+                            case 4: // +Z face at z = w, neighbor at z+1
+                                x = u; y = v; z = w; break;
+                            default: // 5: -Z face at z = w, neighbor at z-1
+                                x = u; y = v; z = w; break;
+                        }
+                        // Bounds safeguard (should be within chunk)
+                        if (x < 0 || x >= sizeX || y < 0 || y >= sizeY || z < 0 || z >= sizeZ) {
+                            mask[u][v] = null;
+                            continue;
+                        }
+                        Block blk = chunk.getBlock(x, y, z);
+                        if (!blk.isOpaque()) { mask[u][v] = null; continue; }
+                        // Compute neighbor position in world coords to test visibility
+                        int wx = chunk.getOriginX() + x;
+                        int wy = y;
+                        int wz = chunk.getOriginZ() + z;
+                        int nwx = wx + dirs[f][0];
+                        int nwy = wy + dirs[f][1];
+                        int nwz = wz + dirs[f][2];
+                        boolean neighborSolid = (world != null) && world.isSolid(nwx, nwy, nwz);
+                        if (neighborSolid) { mask[u][v] = null; continue; }
+                        mask[u][v] = blk.getFaceTextureName(f);
+                    }
+                }
+
+                // Greedy merge rectangles of same texture in mask
+                boolean[][] used = new boolean[uSize][vSize];
+                for (int v = 0; v < vSize; v++) {
+                    for (int u = 0; u < uSize; u++) {
+                        if (used[u][v]) continue;
+                        String tex = mask[u][v];
+                        if (tex == null) { used[u][v] = true; continue; }
+                        // Find maximum width
+                        int width = 1;
+                        while (u + width < uSize && !used[u + width][v] && tex.equals(mask[u + width][v])) width++;
+                        // Find maximum height while all cells in the next row match
+                        int height = 1;
+                        outer:
+                        while (v + height < vSize) {
+                            for (int du = 0; du < width; du++) {
+                                if (used[u + du][v + height] || !tex.equals(mask[u + du][v + height])) {
+                                    break outer;
+                                }
+                            }
+                            height++;
+                        }
+                        // Mark used
+                        for (int dv = 0; dv < height; dv++) {
+                            for (int du = 0; du < width; du++) used[u + du][v + dv] = true;
+                        }
+                        // Emit one quad for this merged rect
+                        Acc acc = accs.computeIfAbsent(tex, k -> new Acc());
+                        // Convert (u..u+width, v..v+height, w) back to block-space rect corners for face f
+                        // We will generate a quad with 4 corners in 3D depending on face and ensure CCW winding for outside
+                        switch (f) {
+                            case 0: { // +X at x=w, u=z, v=y
+                                float x0 = w + 1; // face sits at +X side
+                                float y0 = v; float y1 = v + height;
+                                float z0 = u; float z1 = u + width;
+                                addQuad(acc.verts, acc.inds,
+                                        new float[]{x0, y0, z1}, new float[]{x0, y0, z0}, new float[]{x0, y1, z0}, new float[]{x0, y1, z1},
+                                        normal, acc.indexOffset);
+                                acc.indexOffset += 4;
+                                break; }
+                            case 1: { // -X at x=w, u=z, v=y
+                                float x0 = w; // face sits at -X side
+                                float y0 = v; float y1 = v + height;
+                                float z0 = u; float z1 = u + width;
+                                addQuad(acc.verts, acc.inds,
+                                        new float[]{x0, y0, z0}, new float[]{x0, y0, z1}, new float[]{x0, y1, z1}, new float[]{x0, y1, z0},
+                                        normal, acc.indexOffset);
+                                acc.indexOffset += 4;
+                                break; }
+                            case 2: { // +Y at y=w, u=x, v=z
+                                float y0 = w + 1; // top face at +Y side
+                                float x0 = u; float x1 = u + width;
+                                float z0 = v; float z1 = v + height;
+                                addQuad(acc.verts, acc.inds,
+                                        new float[]{x0, y0, z0}, new float[]{x0, y0, z1}, new float[]{x1, y0, z1}, new float[]{x1, y0, z0},
+                                        normal, acc.indexOffset);
+                                acc.indexOffset += 4;
+                                break; }
+                            case 3: { // -Y at y=w, u=x, v=z
+                                float y0 = w; // bottom face at -Y side
+                                float x0 = u; float x1 = u + width;
+                                float z0 = v; float z1 = v + height;
+                                addQuad(acc.verts, acc.inds,
+                                        new float[]{x0, y0, z0}, new float[]{x1, y0, z0}, new float[]{x1, y0, z1}, new float[]{x0, y0, z1},
+                                        normal, acc.indexOffset);
+                                acc.indexOffset += 4;
+                                break; }
+                            case 4: { // +Z at z=w, u=x, v=y
+                                float z0 = w + 1; // front face at +Z side
+                                float x0 = u; float x1 = u + width;
+                                float y0 = v; float y1 = v + height;
+                                addQuad(acc.verts, acc.inds,
+                                        new float[]{x0, y0, z0}, new float[]{x1, y0, z0}, new float[]{x1, y1, z0}, new float[]{x0, y1, z0},
+                                        normal, acc.indexOffset);
+                                acc.indexOffset += 4;
+                                break; }
+                            default: { // 5: -Z at z=w, u=x, v=y
+                                float z0 = w; // back face at -Z side
+                                float x0 = u; float x1 = u + width;
+                                float y0 = v; float y1 = v + height;
+                                addQuad(acc.verts, acc.inds,
+                                        new float[]{x1, y0, z0}, new float[]{x0, y0, z0}, new float[]{x0, y1, z0}, new float[]{x1, y1, z0},
+                                        normal, acc.indexOffset);
+                                acc.indexOffset += 4;
+                                break; }
+                        }
+                    }
+                }
             }
         }
-        meshCache.clear();
-        // Delete cached textures we created
-        if (grassSideOverlayTex != null) grassSideOverlayTex.delete();
-        for (Texture t : new HashSet<>(textureCache.values())) {
-            if (t != null) t.delete();
+
+        Map<String, float[]> verticesByTexture = new HashMap<>();
+        Map<String, int[]> indicesByTexture = new HashMap<>();
+        for (Map.Entry<String, Acc> e : accs.entrySet()) {
+            Acc a = e.getValue();
+            if (a.inds.isEmpty()) continue;
+            float[] vertices = new float[a.verts.size()];
+            for (int i = 0; i < a.verts.size(); i++) vertices[i] = a.verts.get(i);
+            int[] indices = new int[a.inds.size()];
+            for (int i = 0; i < a.inds.size(); i++) indices[i] = a.inds.get(i);
+            verticesByTexture.put(e.getKey(), vertices);
+            indicesByTexture.put(e.getKey(), indices);
         }
-        textureCache.clear();
-        if (shader != null) shader.delete();
+        return new RawMeshData(verticesByTexture, indicesByTexture);
     }
 
-    // Non-greedy meshing: emit one quad per visible face
+    // Idem pour buildChunkMeshesNonGreedy
+    private RawMeshData buildChunkMeshesNonGreedyRaw(Chunk chunk) {
+        class Acc {
+            final List<Float> verts = new ArrayList<>();
+            final List<Integer> inds = new ArrayList<>();
+            int indexOffset = 0;
+        }
+        Map<String, Acc> accs = new HashMap<>();
+        int[][] dirs = new int[][]{
+                { 1, 0, 0}, {-1, 0, 0},
+                { 0, 1, 0}, { 0,-1, 0},
+                { 0, 0, 1}, { 0, 0,-1}
+        };
+        Vector3f[] normals = new Vector3f[]{
+                new Vector3f( 1, 0, 0), new Vector3f(-1, 0, 0),
+                new Vector3f( 0, 1, 0), new Vector3f( 0,-1, 0),
+                new Vector3f( 0, 0, 1), new Vector3f( 0, 0,-1)
+        };
+        for (int x = 0; x < Chunk.CHUNK_X; x++) {
+            for (int y = 0; y < Chunk.CHUNK_Y; y++) {
+                for (int z = 0; z < Chunk.CHUNK_Z; z++) {
+                    Block block = chunk.getBlock(x, y, z);
+                    if (!block.isOpaque()) continue;
+                    for (int f = 0; f < 6; f++) {
+                        int wx = chunk.getOriginX() + x;
+                        int wy = y;
+                        int wz = chunk.getOriginZ() + z;
+                        int nwx = wx + dirs[f][0];
+                        int nwy = wy + dirs[f][1];
+                        int nwz = wz + dirs[f][2];
+                        boolean neighborSolid = (world != null) && world.isSolid(nwx, nwy, nwz);
+                        if (neighborSolid) continue;
+                        String texName = block.getFaceTextureName(f);
+                        Acc acc = accs.computeIfAbsent(texName, k -> new Acc());
+                        addFace(acc.verts, acc.inds, x, y, z, f, normals[f], acc.indexOffset);
+                        acc.indexOffset += 4;
+                    }
+                }
+            }
+        }
+        Map<String, float[]> verticesByTexture = new HashMap<>();
+        Map<String, int[]> indicesByTexture = new HashMap<>();
+        for (Map.Entry<String, Acc> e : accs.entrySet()) {
+            Acc a = e.getValue();
+            if (a.inds.isEmpty()) continue;
+            float[] vertices = new float[a.verts.size()];
+            for (int i = 0; i < a.verts.size(); i++) vertices[i] = a.verts.get(i);
+            int[] indices = new int[a.inds.size()];
+            for (int i = 0; i < a.inds.size(); i++) indices[i] = a.inds.get(i);
+            verticesByTexture.put(e.getKey(), vertices);
+            indicesByTexture.put(e.getKey(), indices);
+        }
+        return new RawMeshData(verticesByTexture, indicesByTexture);
+    }
+
+    // Nouvelle méthode pour créer les MeshBatch à partir de RawMeshData (thread principal)
+    private List<MeshBatch> buildMeshBatchesFromRaw(RawMeshData raw) {
+        List<MeshBatch> out = new ArrayList<>();
+        for (String texPath : raw.verticesByTexture.keySet()) {
+            float[] vertices = raw.verticesByTexture.get(texPath);
+            int[] indices = raw.indicesByTexture.get(texPath);
+            if (indices.length == 0) continue;
+            Mesh mesh = new Mesh(vertices, indices);
+            Texture tex = getOrCreateTexture(texPath);
+            out.add(new MeshBatch(mesh, tex, texPath));
+        }
+        return out;
+    }
+
+    // Greedy meshing: emit one quad per visible face
     private List<MeshBatch> buildChunkMeshesNonGreedy(Chunk chunk) {
         class Acc {
             final List<Float> verts = new ArrayList<>();
@@ -503,4 +727,54 @@ public class Renderer {
         return useGreedy ? buildChunkMeshesGreedy(chunk) : buildChunkMeshesNonGreedy(chunk);
     }
 
+    // --- Ajout des méthodes utilitaires manquantes ---
+    // Ajoute un quad à la liste des vertex et indices
+    private static void addQuad(List<Float> verts, List<Integer> inds, float[] c0, float[] c1, float[] c2, float[] c3, Vector3f normal, int indexOffset) {
+        float[][] uvs = new float[][]{{0,0},{1,0},{1,1},{0,1}};
+        float[][] corners = new float[][]{c0, c1, c2, c3};
+        for (int i = 0; i < 4; i++) {
+            float[] c = corners[i];
+            verts.add(c[0]); verts.add(c[1]); verts.add(c[2]);
+            verts.add(uvs[i][0]); verts.add(uvs[i][1]);
+            verts.add(normal.x); verts.add(normal.y); verts.add(normal.z);
+        }
+        inds.add(indexOffset + 0); inds.add(indexOffset + 1); inds.add(indexOffset + 2);
+        inds.add(indexOffset + 2); inds.add(indexOffset + 3); inds.add(indexOffset + 0);
+    }
+    // Ajoute une face de cube (6 faces) à la liste
+    private static void addFace(List<Float> verts, List<Integer> inds, int x, int y, int z, int f, Vector3f normal, int indexOffset) {
+        float px = x;
+        float py = y;
+        float pz = z;
+        float[][] corners;
+        switch (f) {
+            case 0: corners = new float[][]{{px+1,py,  pz+1}, {px+1,py,  pz  }, {px+1,py+1,pz  }, {px+1,py+1,pz+1}}; break;
+            case 1: corners = new float[][]{{px,  py,  pz  }, {px,  py,  pz+1}, {px,  py+1,pz+1}, {px,  py+1,pz  }}; break;
+            case 2: corners = new float[][]{{px,  py+1,pz  }, {px,  py+1,pz+1}, {px+1,py+1,pz+1}, {px+1,py+1,pz  }}; break;
+            case 3: corners = new float[][]{{px,  py,  pz  }, {px+1,py,  pz  }, {px+1,py,  pz+1}, {px,  py,  pz+1}}; break;
+            case 4: corners = new float[][]{{px,  py,  pz+1}, {px+1,py,  pz+1}, {px+1,py+1,pz+1}, {px,  py+1,pz+1}}; break;
+            default: corners = new float[][]{{px+1,py,  pz  }, {px,  py,  pz  }, {px,  py+1,pz  }, {px+1,py+1,pz  }}; break;
+        }
+        addQuad(verts, inds, corners[0], corners[1], corners[2], corners[3], normal, indexOffset);
+    }
+
+    // --- Correction du typage du Future pour la génération asynchrone ---
+    // Structure pour le résultat intermédiaire
+    private static class MeshBuildResult {
+        final RawMeshData raw;
+        final boolean greedy;
+        final int version;
+        MeshBuildResult(RawMeshData raw, boolean greedy, int version) {
+            this.raw = raw;
+            this.greedy = greedy;
+            this.version = version;
+        }
+    }
+
+    // Arrêt du thread pool à la fermeture
+    public void shutdown() {
+        meshExecutor.shutdown();
+    }
+
 }
+
