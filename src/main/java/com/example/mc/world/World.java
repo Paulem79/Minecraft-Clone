@@ -1,6 +1,7 @@
 package com.example.mc.world;
 
 import com.example.mc.util.PerlinNoise;
+import com.example.mc.world.block.Blocks;
 
 import java.util.*;
 import java.util.concurrent.*;
@@ -55,10 +56,10 @@ public class World {
                     if (h >= Chunk.CHUNK_Y) h = Chunk.CHUNK_Y - 1;
                     for (int y = 0; y < Chunk.CHUNK_Y; y++) {
                         if (y <= h) {
-                            if (y == h) chunk.setBlock(fx, y, z, Block.GRASS);
-                            else chunk.setBlock(fx, y, z, Block.DIRT);
+                            if (y == h) chunk.setBlock(fx, y, z, Blocks.GRASS_BLOCK);
+                            else chunk.setBlock(fx, y, z, Blocks.DIRT);
                         } else {
-                            chunk.setBlock(fx, y, z, Block.AIR);
+                            chunk.setBlock(fx, y, z, Blocks.AIR);
                         }
                     }
                 }
@@ -82,13 +83,13 @@ public class World {
         int lz = Math.floorMod(z, Chunk.CHUNK_Z);
         Chunk c = chunks.get(key(cx, cz));
         if (c == null) return false;
-        return c.getBlock(lx, y, lz) != Block.AIR;
+        return c.getBlockId(lx, y, lz) != Blocks.AIR.getId();
     }
 
     public void update(float playerX, float playerZ) {
         int pcx = Math.floorDiv((int)Math.floor(playerX), Chunk.CHUNK_X);
         int pcz = Math.floorDiv((int)Math.floor(playerZ), Chunk.CHUNK_Z);
-        ensureChunksAround(pcx, pcz, 2);
+        ensureChunksAround(pcx, pcz, 1);
         // Optional: could unload far chunks here to cap memory
     }
 

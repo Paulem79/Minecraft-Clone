@@ -77,4 +77,9 @@ public class Shader {
     public void setUniform(String name, int value) {
         glUniform1i(glGetUniformLocation(programId, name), value);
     }
+
+    // Envoi d'un vec3
+    public void setUniform3f(String name, float x, float y, float z) {
+        glUniform3f(glGetUniformLocation(programId, name), x, y, z);
+    }
 }

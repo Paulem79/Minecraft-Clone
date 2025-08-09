@@ -2,7 +2,8 @@ package com.example.mc.engine.renderer;
 
 import com.example.mc.engine.Camera;
 import com.example.mc.engine.Window;
-import com.example.mc.world.Block;
+import com.example.mc.world.block.Block;
+import com.example.mc.world.block.Blocks;
 import com.example.mc.world.Chunk;
 import com.example.mc.world.World;
 import org.joml.Matrix4f;
@@ -15,24 +16,21 @@ import static org.lwjgl.opengl.GL11.*;
 
 public class Renderer {
 
-    private static class MeshBatch {
-        final Mesh mesh;
-        final Texture texture;
-        MeshBatch(Mesh mesh, Texture texture) { this.mesh = mesh; this.texture = texture; }
+    private record MeshBatch(Mesh mesh, Texture texture, String texturePath) {
     }
 
     private Shader shader;
     private Camera camera;
     private World world;
 
-    // Textures by block id
-    private final Map<Integer, Texture> textures = new HashMap<>();
+    private Texture grassSideOverlayTex;
+
     // Batches (one mesh per texture/block type) kept for legacy single-chunk path
     private List<MeshBatch> batches = new ArrayList<>();
     // Cache meshes per chunk for multi-chunk rendering
     private final Map<Chunk, List<MeshBatch>> meshCache = new HashMap<>();
 
-    public void init() throws Exception {
+    public void init() {
         // Active OpenGL
         GL.createCapabilities();
         glEnable(GL_DEPTH_TEST);
@@ -45,12 +43,8 @@ public class Renderer {
         // Charger shader
         shader = new Shader("/shaders/vertex.glsl", "/shaders/fragment.glsl");
 
-        // Charger les textures correspondantes aux IDs de blocs
-        // Valeurs par défaut simples pour l'instant
-        textures.put(Block.DIRT, new Texture("/textures/dirt.png"));
-        textures.put(Block.GRASS, new Texture("/textures/grass.png"));
-        // Texture de repli
-        textures.putIfAbsent(-1, new Texture("/textures/stone.png"));
+        // Charger textures additionnelles
+        grassSideOverlayTex = new Texture("/textures/grass_block_side_overlay.png");
 
         // Caméra
         camera = new Camera();
@@ -79,6 +73,9 @@ public class Renderer {
         shader.setUniformMat4("projection", projection);
         shader.setUniformMat4("view", view);
         shader.setUniform("textureSampler", 0);
+        shader.setUniform("overlaySampler", 1);
+        // Set biome grass color (NORMAL biome for now)
+        shader.setUniform3f("biomeGrassColor", com.example.mc.world.Biome.NORMAL.grassR(), com.example.mc.world.Biome.NORMAL.grassG(), com.example.mc.world.Biome.NORMAL.grassB());
 
         if (world != null) {
             // Render all loaded chunks with per-chunk model transform
@@ -92,29 +89,52 @@ public class Renderer {
                 Matrix4f model = new Matrix4f().translation(c.getOriginX(), 0, c.getOriginZ());
                 shader.setUniformMat4("model", model);
                 for (MeshBatch batch : list) {
+                    int mode = 0;
+                    if (batch.texturePath != null) {
+                        if (batch.texturePath.endsWith("grass_block_top.png")) {
+                            mode = 1; // tint base with biome grass color
+                        } else if (batch.texturePath.endsWith("grass_block_side.png")) {
+                            mode = 2; // blend overlay
+                            if (grassSideOverlayTex != null) grassSideOverlayTex.bind(1);
+                        }
+                    }
+                    shader.setUniform("mode", mode);
                     if (batch.texture != null) batch.texture.bind(0);
                     if (batch.mesh != null) batch.mesh.render();
                 }
+                // reset mode
+                shader.setUniform("mode", 0);
             }
         } else {
             // Fallback: render any prebuilt batches at origin
             Matrix4f model = new Matrix4f().identity();
             shader.setUniformMat4("model", model);
             for (MeshBatch batch : batches) {
+                int mode = 0;
+                if (batch.texturePath != null) {
+                    if (batch.texturePath.endsWith("grass_block_top.png")) {
+                        mode = 1;
+                    } else if (batch.texturePath.endsWith("grass_block_side.png")) {
+                        mode = 2;
+                        if (grassSideOverlayTex != null) grassSideOverlayTex.bind(1);
+                    }
+                }
+                shader.setUniform("mode", mode);
                 if (batch.texture != null) batch.texture.bind(0);
                 if (batch.mesh != null) batch.mesh.render();
             }
+            shader.setUniform("mode", 0);
         }
     }
 
     private List<MeshBatch> buildChunkMeshes(Chunk chunk) {
-        // Accumulateurs par type de bloc
+        // Accumulate per texture to allow different textures on different faces of the same block
         class Acc {
             final List<Float> verts = new ArrayList<>();
             final List<Integer> inds = new ArrayList<>();
             int indexOffset = 0;
         }
-        Map<Integer, Acc> accs = new HashMap<>();
+        Map<String, Acc> accs = new HashMap<>();
 
         // Directions: +/-X, +/-Y, +/-Z
         int[][] dirs = new int[][]{
@@ -131,9 +151,8 @@ public class Renderer {
         for (int x = 0; x < Chunk.CHUNK_X; x++) {
             for (int y = 0; y < Chunk.CHUNK_Y; y++) {
                 for (int z = 0; z < Chunk.CHUNK_Z; z++) {
-                    int id = chunk.getBlock(x, y, z);
-                    if (id == Block.AIR) continue;
-                    Acc acc = accs.computeIfAbsent(id, k -> new Acc());
+                    Block block = chunk.getBlock(x, y, z);
+                    if (!block.isOpaque()) continue;
                     // For each face, add if neighbor is air. Use world lookup to handle cross-chunk neighbors correctly.
                     for (int f = 0; f < 6; f++) {
                         int wx = chunk.getOriginX() + x;
@@ -144,7 +163,9 @@ public class Renderer {
                         int nwz = wz + dirs[f][2];
                         boolean neighborSolid = (world != null) && world.isSolid(nwx, nwy, nwz);
                         if (neighborSolid) continue;
-                        // Add face to the accumulator of this block id
+                        String texName = block.getFaceTextureName(f);
+                        Acc acc = accs.computeIfAbsent(texName, k -> new Acc());
+                        // Add face to the accumulator of this texture
                         addFace(acc.verts, acc.inds, x, y, z, f, normals[f], acc.indexOffset);
                         acc.indexOffset += 4;
                     }
@@ -153,16 +174,17 @@ public class Renderer {
         }
 
         List<MeshBatch> out = new ArrayList<>();
-        for (Map.Entry<Integer, Acc> e : accs.entrySet()) {
+        for (Map.Entry<String, Acc> e : accs.entrySet()) {
             Acc a = e.getValue();
             if (a.inds.isEmpty()) continue;
-            float[] v = new float[a.verts.size()];
-            for (int i = 0; i < a.verts.size(); i++) v[i] = a.verts.get(i);
-            int[] ii = new int[a.inds.size()];
-            for (int i = 0; i < a.inds.size(); i++) ii[i] = a.inds.get(i);
-            Mesh mesh = new Mesh(v, ii);
-            Texture tex = textures.getOrDefault(e.getKey(), textures.get(-1));
-            out.add(new MeshBatch(mesh, tex));
+            float[] vertices = new float[a.verts.size()];
+            for (int i = 0; i < a.verts.size(); i++) vertices[i] = a.verts.get(i);
+            int[] indices = new int[a.inds.size()];
+            for (int i = 0; i < a.inds.size(); i++) indices[i] = a.inds.get(i);
+            Mesh mesh = new Mesh(vertices, indices);
+            String texPath = e.getKey();
+            Texture tex = new Texture(texPath);
+            out.add(new MeshBatch(mesh, tex, texPath));
         }
         return out;
     }
@@ -176,23 +198,29 @@ public class Renderer {
         // Define 4 vertices per face depending on face index
         float[][] corners;
         switch (f) {
-            case 0: // +X
-                corners = new float[][]{{px+1,py,  pz  }, {px+1,py,  pz+1}, {px+1,py+1,pz+1}, {px+1,py+1,pz  }};
+            case 0: // +X (right)
+                // CCW when viewed from +X
+                corners = new float[][]{{px+1,py,  pz+1}, {px+1,py,  pz  }, {px+1,py+1,pz  }, {px+1,py+1,pz+1}};
                 break;
-            case 1: // -X
-                corners = new float[][]{{px,  py,  pz+1}, {px,  py,  pz  }, {px,  py+1,pz  }, {px,  py+1,pz+1}};
+            case 1: // -X (left)
+                // CCW when viewed from -X
+                corners = new float[][]{{px,  py,  pz  }, {px,  py,  pz+1}, {px,  py+1,pz+1}, {px,  py+1,pz  }};
                 break;
             case 2: // +Y (top)
-                corners = new float[][]{{px,  py+1,pz  }, {px+1,py+1,pz  }, {px+1,py+1,pz+1}, {px,  py+1,pz+1}};
+                // Order to ensure CCW winding when viewed from above
+                corners = new float[][]{{px,  py+1,pz  }, {px,  py+1,pz+1}, {px+1,py+1,pz+1}, {px+1,py+1,pz  }};
                 break;
             case 3: // -Y (bottom)
-                corners = new float[][]{{px,  py,  pz+1}, {px+1,py,  pz+1}, {px+1,py,  pz  }, {px,  py,  pz  }};
+                // Order to ensure CCW winding when viewed from below
+                corners = new float[][]{{px,  py,  pz  }, {px+1,py,  pz  }, {px+1,py,  pz+1}, {px,  py,  pz+1}};
                 break;
-            case 4: // +Z
-                corners = new float[][]{{px+1,py,  pz+1}, {px,  py,  pz+1}, {px,  py+1,pz+1}, {px+1,py+1,pz+1}};
+            case 4: // +Z (front)
+                // CCW when viewed from +Z towards origin
+                corners = new float[][]{{px,  py,  pz+1}, {px+1,py,  pz+1}, {px+1,py+1,pz+1}, {px,  py+1,pz+1}};
                 break;
-            default: // -Z
-                corners = new float[][]{{px,  py,  pz  }, {px+1,py,  pz  }, {px+1,py+1,pz  }, {px,  py+1,pz  }};
+            default: // -Z (back)
+                // CCW when viewed from -Z (outside)
+                corners = new float[][]{{px+1,py,  pz  }, {px,  py,  pz  }, {px,  py+1,pz  }, {px+1,py+1,pz  }};
                 break;
         }
         float[][] uvs = new float[][]{{0,0},{1,0},{1,1},{0,1}};
@@ -222,8 +250,8 @@ public class Renderer {
             }
         }
         meshCache.clear();
-        for (Texture t : new HashSet<>(textures.values())) {
-            if (t != null) t.delete();
+        for (Block block : new HashSet<>(Blocks.blocks.values())) {
+            if (block != null && block.getTexture() != null) block.getTexture().delete();
         }
         if (shader != null) shader.delete();
     }
