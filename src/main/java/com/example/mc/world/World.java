@@ -1,6 +1,7 @@
 package com.example.mc.world;
 
 import com.example.mc.util.PerlinNoise;
+import com.example.mc.world.block.Block;
 import com.example.mc.world.block.Blocks;
 
 import java.util.*;
@@ -60,6 +61,31 @@ public class World {
                                 chunk.setBlock(x, y, z, Blocks.AIR);
                             }
                         }
+                        // Génération d'arbres avec une faible probabilité
+                        if (h + 6 < Chunk.CHUNK_Y && Math.random() < 0.04) { // 4% de chance
+                            int treeHeight = 4 + (int)(Math.random() * 3); // 4 à 6 blocs de haut
+                            // Tronc
+                            for (int t = 1; t <= treeHeight; t++) {
+                                chunk.setBlock(x, h + t, z, Blocks.LOG);
+                            }
+                            // Feuillage (cube 3x3x3 autour du sommet du tronc)
+                            int leavesBase = h + treeHeight - 1;
+                            for (int dx = -1; dx <= 1; dx++) {
+                                for (int dz = -1; dz <= 1; dz++) {
+                                    for (int dy = 0; dy <= 2; dy++) {
+                                        int lx = x + dx;
+                                        int ly = leavesBase + dy;
+                                        int lz = z + dz;
+                                        if (lx >= 0 && lx < Chunk.CHUNK_X && lz >= 0 && lz < Chunk.CHUNK_Z && ly < Chunk.CHUNK_Y) {
+                                            // Ne pas écraser le tronc
+                                            if (!(dx == 0 && dz == 0 && dy == 1) && !chunk.getBlock(lx, ly, lz).isBlock()) {
+                                                chunk.setBlock(lx, ly, lz, Blocks.LEAVES);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 // Mark chunk updated for renderers to rebuild meshes
@@ -70,7 +96,7 @@ public class World {
         });
     }
 
-    public boolean isSolid(int x, int y, int z) {
+    public boolean isOccluding(int x, int y, int z) {
         if (y < 0 || y >= Chunk.CHUNK_Y) return false;
         int cx = Math.floorDiv(x, Chunk.CHUNK_X);
         int cz = Math.floorDiv(z, Chunk.CHUNK_Z);
@@ -78,7 +104,36 @@ public class World {
         int lz = Math.floorMod(z, Chunk.CHUNK_Z);
         Chunk c = chunks.get(key(cx, cz));
         if (c == null) return false;
-        return c.getBlockId(lx, y, lz) != Blocks.AIR.getId();
+        int id = c.getBlockId(lx, y, lz);
+        Block block = Blocks.blocks.get(id);
+        // Un bloc est solide s'il n'est pas de l'air ET n'est pas transparent
+        return block != null && block.isBlock() && !block.isTransparent();
+    }
+
+    public boolean isPassable(int x, int y, int z) {
+        if (y < 0 || y >= Chunk.CHUNK_Y) return false;
+        int cx = Math.floorDiv(x, Chunk.CHUNK_X);
+        int cz = Math.floorDiv(z, Chunk.CHUNK_Z);
+        int lx = Math.floorMod(x, Chunk.CHUNK_X);
+        int lz = Math.floorMod(z, Chunk.CHUNK_Z);
+        Chunk c = chunks.get(key(cx, cz));
+        if (c == null) return false;
+        int id = c.getBlockId(lx, y, lz);
+        Block block = Blocks.blocks.get(id);
+        // Un bloc est solide s'il n'est pas de l'air ET n'est pas transparent
+        return block != null && !block.isBlock();
+    }
+
+    public Block getBlock(int x, int y, int z) {
+        if (y < 0 || y >= Chunk.CHUNK_Y) return null;
+        int cx = Math.floorDiv(x, Chunk.CHUNK_X);
+        int cz = Math.floorDiv(z, Chunk.CHUNK_Z);
+        int lx = Math.floorMod(x, Chunk.CHUNK_X);
+        int lz = Math.floorMod(z, Chunk.CHUNK_Z);
+        Chunk c = chunks.get(key(cx, cz));
+        if (c == null) return null;
+        int id = c.getBlockId(lx, y, lz);
+        return Blocks.blocks.get(id);
     }
 
     public void update(float playerX, float playerZ) {

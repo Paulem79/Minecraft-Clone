@@ -6,8 +6,10 @@ out vec4 FragColor;
 
 uniform sampler2D textureSampler;
 uniform sampler2D overlaySampler; // used when mode==2
-uniform int mode;                 // 0=default, 1=grassTopTint, 2=grassSideWithOverlay
+// Modes: 0=default, 1=grassTint, 2=overlayWithTint, 3=foliageTint
+uniform int mode;
 uniform vec3 biomeGrassColor;     // tint color for grass in current biome
+uniform vec3 biomeFoliageColor;   // tint color for leaves in current biome
 
 void main()
 {
@@ -23,10 +25,13 @@ void main()
         // Tint grass top by biome grass color
         color *= biomeGrassColor;
     } else if (mode == 2) {
-        // Blend base grass side with overlay tinted by biome color
+        // Blend base with overlay tinted by biome color
         vec4 overlay = texture(overlaySampler, TexCoord);
         vec3 tintedOverlay = overlay.rgb * biomeGrassColor;
         color = mix(color, tintedOverlay, overlay.a);
+    } else if (mode == 3) {
+        // Tint foliage (leaves) by biome foliage color
+        color *= biomeFoliageColor;
     }
 
     FragColor = vec4(color, base.a);

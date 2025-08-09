@@ -154,7 +154,7 @@ public class Player {
         for (int bx = startX; bx <= endX; bx++) {
             for (int by = startY; by <= endY; by++) {
                 for (int bz = startZ; bz <= endZ; bz++) {
-                    if (world.isSolid(bx, by, bz)) {
+                    if (!world.isPassable(bx, by, bz)) {
                         collided = true;
                     }
                 }
@@ -230,7 +230,7 @@ public class Player {
         for (int bx = startX; bx <= endX; bx++)
             for (int by = startY; by <= endY; by++)
                 for (int bz = startZ; bz <= endZ; bz++)
-                    if (world.isSolid(bx, by, bz)) return true;
+                    if (!world.isPassable(bx, by, bz)) return true;
         return false;
     }
 }

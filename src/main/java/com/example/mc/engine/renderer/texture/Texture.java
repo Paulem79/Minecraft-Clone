@@ -1,4 +1,4 @@
-package com.example.mc.engine.renderer;
+package com.example.mc.engine.renderer.texture;
 
 import org.lwjgl.stb.STBImage;
 
@@ -14,11 +14,14 @@ public class Texture {
     private final int id;
     private final int width;
     private final int height;
+    private final String resourcePath;
 
     public Texture(String resourcePath) {
+        this.resourcePath = resourcePath;
+
         URL url = getClass().getResource(resourcePath);
         if (url == null) {
-            throw new RuntimeException("Texture resource not found: " + resourcePath);
+            url = getClass().getResource("/textures/stone.png");
         }
         String filePath;
         try {
@@ -81,4 +84,7 @@ public class Texture {
     public int getId() { return id; }
     public int getWidth() { return width; }
     public int getHeight() { return height; }
+    public String getResourcePath() {
+        return resourcePath;
+    }
 }

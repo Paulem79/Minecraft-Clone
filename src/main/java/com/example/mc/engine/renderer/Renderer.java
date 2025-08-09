@@ -2,6 +2,10 @@ package com.example.mc.engine.renderer;
 
 import com.example.mc.engine.Camera;
 import com.example.mc.engine.Window;
+import com.example.mc.engine.renderer.texture.OverlayTexture;
+import com.example.mc.engine.renderer.texture.Texture;
+import com.example.mc.engine.renderer.texture.TintTexture;
+import com.example.mc.world.Biome;
 import com.example.mc.world.block.Block;
 import com.example.mc.world.Chunk;
 import com.example.mc.world.World;
@@ -23,7 +27,9 @@ public class Renderer {
     private Camera camera;
     private World world;
 
-    private Texture grassSideOverlayTex;
+    private OverlayTexture grassSideWithOverlay;
+    private TintTexture grassTopTint;
+    private TintTexture leavesTint;
 
     // Texture cache to avoid reloading the same texture many times
     private final Map<String, Texture> textureCache = new HashMap<>();
@@ -56,8 +62,16 @@ public class Renderer {
         // Charger shader
         shader = new Shader("/shaders/vertex.glsl", "/shaders/fragment.glsl");
 
-        // Charger textures additionnelles
-        grassSideOverlayTex = new Texture("/textures/grass_block_side_overlay.png");
+        // Charger textures spéciales avec overlay et tint
+        grassSideWithOverlay = new OverlayTexture("/textures/grass_block_side.png",
+                                                "/textures/grass_block_side_overlay.png", true);
+        grassTopTint = new TintTexture("/textures/grass_block_top.png", TintTexture.TintType.GRASS);
+        leavesTint = new TintTexture("/textures/leaves.png", TintTexture.TintType.FOLIAGE);
+
+        // Mettre en cache les textures spéciales
+        textureCache.put("/textures/grass_block_side.png", grassSideWithOverlay);
+        textureCache.put("/textures/grass_block_top.png", grassTopTint);
+        textureCache.put("/textures/leaves.png", leavesTint);
 
         // Caméra
         camera = new Camera();
@@ -91,8 +105,17 @@ public class Renderer {
         shader.setUniformMat4("view", view);
         shader.setUniform("textureSampler", 0);
         shader.setUniform("overlaySampler", 1);
-        // Set biome grass color (NORMAL biome for now)
-        shader.setUniform3f("biomeGrassColor", com.example.mc.world.Biome.NORMAL.grassR(), com.example.mc.world.Biome.NORMAL.grassG(), com.example.mc.world.Biome.NORMAL.grassB());
+
+        // Set biome colors for the current chunk
+        Biome currentBiome = Biome.NORMAL;
+        shader.setUniform3f("biomeGrassColor",
+                           currentBiome.grassR(),
+                           currentBiome.grassG(),
+                           currentBiome.grassB());
+        shader.setUniform3f("biomeFoliageColor",
+                           currentBiome.foliageR(),
+                           currentBiome.foliageG(),
+                           currentBiome.foliageB());
 
         if (world != null) {
             // Rebuild up to a small number of chunk meshes per frame to avoid spikes
@@ -163,15 +186,7 @@ public class Renderer {
                 Matrix4f model = new Matrix4f().translation(c.getOriginX(), 0, c.getOriginZ());
                 shader.setUniformMat4("model", model);
                 for (MeshBatch batch : cm.list) {
-                    int mode = 0;
-                    if (batch.texturePath != null) {
-                        if (batch.texturePath.endsWith("grass_block_top.png")) {
-                            mode = 1; // tint base with biome grass color
-                        } else if (batch.texturePath.endsWith("grass_block_side.png")) {
-                            mode = 2; // blend overlay
-                            if (grassSideOverlayTex != null) grassSideOverlayTex.bind(1);
-                        }
-                    }
+                    int mode = getMode(batch);
                     shader.setUniform("mode", mode);
                     if (batch.texture != null) batch.texture.bind(0);
                     if (batch.mesh != null) batch.mesh.render();
@@ -184,21 +199,30 @@ public class Renderer {
             Matrix4f model = new Matrix4f().identity();
             shader.setUniformMat4("model", model);
             for (MeshBatch batch : batches) {
-                int mode = 0;
-                if (batch.texturePath != null) {
-                    if (batch.texturePath.endsWith("grass_block_top.png")) {
-                        mode = 1;
-                    } else if (batch.texturePath.endsWith("grass_block_side.png")) {
-                        mode = 2;
-                        if (grassSideOverlayTex != null) grassSideOverlayTex.bind(1);
-                    }
-                }
+                int mode = getMode(batch);
                 shader.setUniform("mode", mode);
                 if (batch.texture != null) batch.texture.bind(0);
                 if (batch.mesh != null) batch.mesh.render();
             }
             shader.setUniform("mode", 0);
         }
+    }
+
+    private static int getMode(MeshBatch batch) {
+        int mode = 0;
+        if (batch.texture != null && batch.texturePath != null) {
+            // Configure le mode de rendu en fonction du type de texture
+            if (batch.texture instanceof TintTexture tintTex) {
+                if (tintTex.getTintType() == TintTexture.TintType.GRASS) {
+                    mode = 1; // tint base with biome grass color
+                } else if (tintTex.getTintType() == TintTexture.TintType.FOLIAGE) {
+                    mode = 3; // tint with biome foliage color
+                }
+            } else if (batch.texture instanceof OverlayTexture) {
+                mode = 2; // blend overlay with grass tint
+            }
+        }
+        return mode;
     }
 
     // Greedy meshing implementation
@@ -276,7 +300,7 @@ public class Renderer {
                             continue;
                         }
                         Block blk = chunk.getBlock(x, y, z);
-                        if (!blk.isOpaque()) { mask[u][v] = null; continue; }
+                        if (!blk.isBlock()) { mask[u][v] = null; continue; }
                         // Compute neighbor position in world coords to test visibility
                         int wx = chunk.getOriginX() + x;
                         int wy = y;
@@ -284,7 +308,7 @@ public class Renderer {
                         int nwx = wx + dirs[f][0];
                         int nwy = wy + dirs[f][1];
                         int nwz = wz + dirs[f][2];
-                        boolean neighborSolid = (world != null) && world.isSolid(nwx, nwy, nwz);
+                        boolean neighborSolid = (world != null) && world.isOccluding(nwx, nwy, nwz);
                         if (neighborSolid) { mask[u][v] = null; continue; }
                         mask[u][v] = blk.getFaceTextureName(f);
                     }
@@ -479,7 +503,7 @@ public class Renderer {
                             continue;
                         }
                         Block blk = chunk.getBlock(x, y, z);
-                        if (!blk.isOpaque()) { mask[u][v] = null; continue; }
+                        if (!blk.isBlock()) { mask[u][v] = null; continue; }
                         // Compute neighbor position in world coords to test visibility
                         int wx = chunk.getOriginX() + x;
                         int wy = y;
@@ -487,7 +511,7 @@ public class Renderer {
                         int nwx = wx + dirs[f][0];
                         int nwy = wy + dirs[f][1];
                         int nwz = wz + dirs[f][2];
-                        boolean neighborSolid = (world != null) && world.isSolid(nwx, nwy, nwz);
+                        boolean neighborSolid = (world != null) && world.isOccluding(nwx, nwy, nwz);
                         if (neighborSolid) { mask[u][v] = null; continue; }
                         mask[u][v] = blk.getFaceTextureName(f);
                     }
@@ -620,7 +644,7 @@ public class Renderer {
             for (int y = 0; y < Chunk.CHUNK_Y; y++) {
                 for (int z = 0; z < Chunk.CHUNK_Z; z++) {
                     Block block = chunk.getBlock(x, y, z);
-                    if (!block.isOpaque()) continue;
+                    if (!block.isBlock()) continue;
                     for (int f = 0; f < 6; f++) {
                         int wx = chunk.getOriginX() + x;
                         int wy = y;
@@ -628,7 +652,7 @@ public class Renderer {
                         int nwx = wx + dirs[f][0];
                         int nwy = wy + dirs[f][1];
                         int nwz = wz + dirs[f][2];
-                        boolean neighborSolid = (world != null) && world.isSolid(nwx, nwy, nwz);
+                        boolean neighborSolid = (world != null) && world.isOccluding(nwx, nwy, nwz);
                         if (neighborSolid) continue;
                         String texName = block.getFaceTextureName(f);
                         Acc acc = accs.computeIfAbsent(texName, k -> new Acc());
@@ -689,7 +713,7 @@ public class Renderer {
             for (int y = 0; y < Chunk.CHUNK_Y; y++) {
                 for (int z = 0; z < Chunk.CHUNK_Z; z++) {
                     Block block = chunk.getBlock(x, y, z);
-                    if (!block.isOpaque()) continue;
+                    if (!block.isBlock()) continue;
                     for (int f = 0; f < 6; f++) {
                         int wx = chunk.getOriginX() + x;
                         int wy = y;
@@ -697,7 +721,7 @@ public class Renderer {
                         int nwx = wx + dirs[f][0];
                         int nwy = wy + dirs[f][1];
                         int nwz = wz + dirs[f][2];
-                        boolean neighborSolid = (world != null) && world.isSolid(nwx, nwy, nwz);
+                        boolean neighborSolid = (world != null) && world.isOccluding(nwx, nwy, nwz);
                         if (neighborSolid) continue;
                         String texName = block.getFaceTextureName(f);
                         Acc acc = accs.computeIfAbsent(texName, k -> new Acc());

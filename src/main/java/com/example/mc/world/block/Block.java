@@ -1,16 +1,22 @@
 package com.example.mc.world.block;
 
-import com.example.mc.engine.renderer.Texture;
+import com.example.mc.engine.renderer.texture.Texture;
 
 import static com.example.mc.world.block.Blocks.AIR;
 
 public abstract class Block {
     protected final String name;
     private final int id;
+    private final boolean transparent;
 
     public Block(String name, int id) {
+        this(name, id, false);
+    }
+
+    public Block(String name, int id, boolean transparent) {
         this.name = name;
         this.id = id;
+        this.transparent = transparent;
     }
 
     public int getId() { return id; }
@@ -44,5 +50,9 @@ public abstract class Block {
         return getFaceTexture(Face.fromIndex(face));
     }
 
-    public boolean isOpaque() { return id != AIR.getId(); }
+    public boolean isTransparent() {
+        return transparent;
+    }
+
+    public boolean isBlock() { return id != AIR.getId(); }
 }
