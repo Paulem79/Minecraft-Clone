@@ -8,7 +8,7 @@ import java.util.concurrent.*;
 
 public class World {
     private final Map<Long, Chunk> chunks = new ConcurrentHashMap<>();
-    private final PerlinNoise noise = new PerlinNoise(123L);
+    private final PerlinNoise noise = new PerlinNoise(UUID.randomUUID().toString().hashCode());
 
     private static long key(int cx, int cz) { return (((long)cx) << 32) ^ (cz & 0xffffffffL); }
 
@@ -89,7 +89,7 @@ public class World {
     public void update(float playerX, float playerZ) {
         int pcx = Math.floorDiv((int)Math.floor(playerX), Chunk.CHUNK_X);
         int pcz = Math.floorDiv((int)Math.floor(playerZ), Chunk.CHUNK_Z);
-        ensureChunksAround(pcx, pcz, 1);
+        ensureChunksAround(pcx, pcz, 20);
         // Optional: could unload far chunks here to cap memory
     }
 

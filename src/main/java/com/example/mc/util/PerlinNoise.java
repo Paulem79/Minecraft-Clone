@@ -1,10 +1,12 @@
 package com.example.mc.util;
 
+import com.example.mc.math.FastRandom;
+
 public class PerlinNoise {
     private final int[] p = new int[512];
 
     public PerlinNoise(long seed) {
-        java.util.Random rand = new java.util.Random(seed);
+        FastRandom rand = new FastRandom(seed);
         int[] permutation = new int[256];
         for (int i = 0; i < 256; i++) permutation[i] = i;
         for (int i = 0; i < 256; i++) {

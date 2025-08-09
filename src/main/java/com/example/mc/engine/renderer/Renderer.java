@@ -28,7 +28,8 @@ public class Renderer {
     // Batches (one mesh per texture/block type) kept for legacy single-chunk path
     private List<MeshBatch> batches = new ArrayList<>();
     // Cache meshes per chunk for multi-chunk rendering
-    private final Map<Chunk, List<MeshBatch>> meshCache = new HashMap<>();
+    private record ChunkMesh(List<MeshBatch> list, boolean greedy) {}
+    private final Map<Chunk, ChunkMesh> meshCache = new HashMap<>();
 
     public void init() {
         // Active OpenGL
@@ -80,15 +81,26 @@ public class Renderer {
         if (world != null) {
             // Render all loaded chunks with per-chunk model transform
             Collection<Chunk> chunks = world.getChunks();
+            float camX = camera.getPosition().x;
+            float camZ = camera.getPosition().z;
             for (Chunk c : chunks) {
-                List<MeshBatch> list = meshCache.get(c);
-                if (list == null) {
-                    list = buildChunkMeshes(c);
-                    meshCache.put(c, list);
+                // Decide whether to use greedy meshing based on horizontal distance to chunk center
+                float chunkCenterX = c.getOriginX() + Chunk.CHUNK_X * 0.5f;
+                float chunkCenterZ = c.getOriginZ() + Chunk.CHUNK_Z * 0.5f;
+                float dx = camX - chunkCenterX;
+                float dz = camZ - chunkCenterZ;
+                float dist = (float)Math.sqrt(dx * dx + dz * dz);
+                boolean useGreedy = dist > 80.0f;
+
+                ChunkMesh cm = meshCache.get(c);
+                if (cm == null || cm.greedy != useGreedy) {
+                    List<MeshBatch> list = buildChunkMeshes(c, useGreedy);
+                    cm = new ChunkMesh(list, useGreedy);
+                    meshCache.put(c, cm);
                 }
                 Matrix4f model = new Matrix4f().translation(c.getOriginX(), 0, c.getOriginZ());
                 shader.setUniformMat4("model", model);
-                for (MeshBatch batch : list) {
+                for (MeshBatch batch : cm.list) {
                     int mode = 0;
                     if (batch.texturePath != null) {
                         if (batch.texturePath.endsWith("grass_block_top.png")) {
@@ -127,7 +139,8 @@ public class Renderer {
         }
     }
 
-    private List<MeshBatch> buildChunkMeshes(Chunk chunk) {
+    // Greedy meshing implementation
+    private List<MeshBatch> buildChunkMeshesGreedy(Chunk chunk) {
         // Accumulate per texture to allow different textures on different faces of the same block
         class Acc {
             final List<Float> verts = new ArrayList<>();
@@ -148,13 +161,61 @@ public class Renderer {
                 new Vector3f( 0, 0, 1), new Vector3f( 0, 0,-1)
         };
 
-        for (int x = 0; x < Chunk.CHUNK_X; x++) {
-            for (int y = 0; y < Chunk.CHUNK_Y; y++) {
-                for (int z = 0; z < Chunk.CHUNK_Z; z++) {
-                    Block block = chunk.getBlock(x, y, z);
-                    if (!block.isOpaque()) continue;
-                    // For each face, add if neighbor is air. Use world lookup to handle cross-chunk neighbors correctly.
-                    for (int f = 0; f < 6; f++) {
+        // Greedy meshing per face direction f
+        for (int f = 0; f < 6; f++) {
+            final int U, V, W; // Dimensions per face orientation
+            // For each face, we define which axes are in-plane (u,v) and which is the slice axis (w)
+            // Also define normal for this face
+            Vector3f normal = normals[f];
+            int sizeX = Chunk.CHUNK_X;
+            int sizeY = Chunk.CHUNK_Y;
+            int sizeZ = Chunk.CHUNK_Z;
+            int uSize, vSize, wSize;
+            // Mapping functions depend on f
+            // We'll iterate slices along w, and for each build a u-v mask of texture strings
+            switch (f) {
+                case 0: // +X: plane (u=z, v=y), slices over x
+                case 1: // -X
+                    uSize = sizeZ; vSize = sizeY; wSize = sizeX;
+                    break;
+                case 2: // +Y: plane (u=x, v=z), slices over y
+                case 3: // -Y
+                    uSize = sizeX; vSize = sizeZ; wSize = sizeY;
+                    break;
+                default: // 4:+Z, 5:-Z -> plane (u=x, v=y), slices over z
+                    uSize = sizeX; vSize = sizeY; wSize = sizeZ;
+                    break;
+            }
+
+            for (int w = 0; w < wSize; w++) {
+                String[][] mask = new String[uSize][vSize];
+                // Fill mask with texture name when the face at (u,v,w) is visible
+                for (int v = 0; v < vSize; v++) {
+                    for (int u = 0; u < uSize; u++) {
+                        // Map (u,v,w) to chunk-local (x,y,z)
+                        int x, y, z;
+                        switch (f) {
+                            case 0: // +X face at x = w, neighbor at x+1
+                                x = w; y = v; z = u; break;
+                            case 1: // -X face at x = w, neighbor at x-1
+                                x = w; y = v; z = u; break;
+                            case 2: // +Y face at y = w, neighbor at y+1
+                                x = u; y = w; z = v; break;
+                            case 3: // -Y face at y = w, neighbor at y-1
+                                x = u; y = w; z = v; break;
+                            case 4: // +Z face at z = w, neighbor at z+1
+                                x = u; y = v; z = w; break;
+                            default: // 5: -Z face at z = w, neighbor at z-1
+                                x = u; y = v; z = w; break;
+                        }
+                        // Bounds safeguard (should be within chunk)
+                        if (x < 0 || x >= sizeX || y < 0 || y >= sizeY || z < 0 || z >= sizeZ) {
+                            mask[u][v] = null;
+                            continue;
+                        }
+                        Block blk = chunk.getBlock(x, y, z);
+                        if (!blk.isOpaque()) { mask[u][v] = null; continue; }
+                        // Compute neighbor position in world coords to test visibility
                         int wx = chunk.getOriginX() + x;
                         int wy = y;
                         int wz = chunk.getOriginZ() + z;
@@ -162,12 +223,96 @@ public class Renderer {
                         int nwy = wy + dirs[f][1];
                         int nwz = wz + dirs[f][2];
                         boolean neighborSolid = (world != null) && world.isSolid(nwx, nwy, nwz);
-                        if (neighborSolid) continue;
-                        String texName = block.getFaceTextureName(f);
-                        Acc acc = accs.computeIfAbsent(texName, k -> new Acc());
-                        // Add face to the accumulator of this texture
-                        addFace(acc.verts, acc.inds, x, y, z, f, normals[f], acc.indexOffset);
-                        acc.indexOffset += 4;
+                        if (neighborSolid) { mask[u][v] = null; continue; }
+                        mask[u][v] = blk.getFaceTextureName(f);
+                    }
+                }
+
+                // Greedy merge rectangles of same texture in mask
+                boolean[][] used = new boolean[uSize][vSize];
+                for (int v = 0; v < vSize; v++) {
+                    for (int u = 0; u < uSize; u++) {
+                        if (used[u][v]) continue;
+                        String tex = mask[u][v];
+                        if (tex == null) { used[u][v] = true; continue; }
+                        // Find maximum width
+                        int width = 1;
+                        while (u + width < uSize && !used[u + width][v] && tex.equals(mask[u + width][v])) width++;
+                        // Find maximum height while all cells in the next row match
+                        int height = 1;
+                        outer:
+                        while (v + height < vSize) {
+                            for (int du = 0; du < width; du++) {
+                                if (used[u + du][v + height] || !tex.equals(mask[u + du][v + height])) {
+                                    break outer;
+                                }
+                            }
+                            height++;
+                        }
+                        // Mark used
+                        for (int dv = 0; dv < height; dv++) {
+                            for (int du = 0; du < width; du++) used[u + du][v + dv] = true;
+                        }
+                        // Emit one quad for this merged rect
+                        Acc acc = accs.computeIfAbsent(tex, k -> new Acc());
+                        // Convert (u..u+width, v..v+height, w) back to block-space rect corners for face f
+                        // We will generate a quad with 4 corners in 3D depending on face and ensure CCW winding for outside
+                        switch (f) {
+                            case 0: { // +X at x=w, u=z, v=y
+                                float x0 = w + 1; // face sits at +X side
+                                float y0 = v; float y1 = v + height;
+                                float z0 = u; float z1 = u + width;
+                                addQuad(acc.verts, acc.inds,
+                                        new float[]{x0, y0, z1}, new float[]{x0, y0, z0}, new float[]{x0, y1, z0}, new float[]{x0, y1, z1},
+                                        normal, acc.indexOffset);
+                                acc.indexOffset += 4;
+                                break; }
+                            case 1: { // -X at x=w, u=z, v=y
+                                float x0 = w; // face sits at -X side
+                                float y0 = v; float y1 = v + height;
+                                float z0 = u; float z1 = u + width;
+                                addQuad(acc.verts, acc.inds,
+                                        new float[]{x0, y0, z0}, new float[]{x0, y0, z1}, new float[]{x0, y1, z1}, new float[]{x0, y1, z0},
+                                        normal, acc.indexOffset);
+                                acc.indexOffset += 4;
+                                break; }
+                            case 2: { // +Y at y=w, u=x, v=z
+                                float y0 = w + 1; // top face at +Y side
+                                float x0 = u; float x1 = u + width;
+                                float z0 = v; float z1 = v + height;
+                                addQuad(acc.verts, acc.inds,
+                                        new float[]{x0, y0, z0}, new float[]{x0, y0, z1}, new float[]{x1, y0, z1}, new float[]{x1, y0, z0},
+                                        normal, acc.indexOffset);
+                                acc.indexOffset += 4;
+                                break; }
+                            case 3: { // -Y at y=w, u=x, v=z
+                                float y0 = w; // bottom face at -Y side
+                                float x0 = u; float x1 = u + width;
+                                float z0 = v; float z1 = v + height;
+                                addQuad(acc.verts, acc.inds,
+                                        new float[]{x0, y0, z0}, new float[]{x1, y0, z0}, new float[]{x1, y0, z1}, new float[]{x0, y0, z1},
+                                        normal, acc.indexOffset);
+                                acc.indexOffset += 4;
+                                break; }
+                            case 4: { // +Z at z=w, u=x, v=y
+                                float z0 = w + 1; // front face at +Z side
+                                float x0 = u; float x1 = u + width;
+                                float y0 = v; float y1 = v + height;
+                                addQuad(acc.verts, acc.inds,
+                                        new float[]{x0, y0, z0}, new float[]{x1, y0, z0}, new float[]{x1, y1, z0}, new float[]{x0, y1, z0},
+                                        normal, acc.indexOffset);
+                                acc.indexOffset += 4;
+                                break; }
+                            default: { // 5: -Z at z=w, u=x, v=y
+                                float z0 = w; // back face at -Z side
+                                float x0 = u; float x1 = u + width;
+                                float y0 = v; float y1 = v + height;
+                                addQuad(acc.verts, acc.inds,
+                                        new float[]{x1, y0, z0}, new float[]{x0, y0, z0}, new float[]{x0, y1, z0}, new float[]{x1, y1, z0},
+                                        normal, acc.indexOffset);
+                                acc.indexOffset += 4;
+                                break; }
+                        }
                     }
                 }
             }
@@ -223,17 +368,20 @@ public class Renderer {
                 corners = new float[][]{{px+1,py,  pz  }, {px,  py,  pz  }, {px,  py+1,pz  }, {px+1,py+1,pz  }};
                 break;
         }
+        addQuad(verts, inds, corners[0], corners[1], corners[2], corners[3], normal, indexOffset);
+    }
+
+    // Generic quad adder from 4 provided corners (CCW order as seen from outside)
+    // UVs are set 0..1 across the quad (stretched when greedy meshed)
+    private void addQuad(List<Float> verts, List<Integer> inds, float[] c0, float[] c1, float[] c2, float[] c3, Vector3f normal, int indexOffset) {
         float[][] uvs = new float[][]{{0,0},{1,0},{1,1},{0,1}};
+        float[][] corners = new float[][]{c0, c1, c2, c3};
         for (int i = 0; i < 4; i++) {
             float[] c = corners[i];
-            // pos
             verts.add(c[0]); verts.add(c[1]); verts.add(c[2]);
-            // uv
             verts.add(uvs[i][0]); verts.add(uvs[i][1]);
-            // normal
             verts.add(normal.x); verts.add(normal.y); verts.add(normal.z);
         }
-        // two triangles
         inds.add(indexOffset + 0); inds.add(indexOffset + 1); inds.add(indexOffset + 2);
         inds.add(indexOffset + 2); inds.add(indexOffset + 3); inds.add(indexOffset + 0);
     }
@@ -244,8 +392,8 @@ public class Renderer {
             if (b.mesh != null) b.mesh.cleanup();
         }
         // Cleanup cached chunk meshes
-        for (List<MeshBatch> list : meshCache.values()) {
-            for (MeshBatch b : list) {
+        for (ChunkMesh cm : meshCache.values()) {
+            for (MeshBatch b : cm.list) {
                 if (b.mesh != null) b.mesh.cleanup();
             }
         }
@@ -255,4 +403,65 @@ public class Renderer {
         }
         if (shader != null) shader.delete();
     }
+
+    // Non-greedy meshing: emit one quad per visible face
+    private List<MeshBatch> buildChunkMeshesNonGreedy(Chunk chunk) {
+        class Acc {
+            final List<Float> verts = new ArrayList<>();
+            final List<Integer> inds = new ArrayList<>();
+            int indexOffset = 0;
+        }
+        Map<String, Acc> accs = new HashMap<>();
+        int[][] dirs = new int[][]{
+                { 1, 0, 0}, {-1, 0, 0},
+                { 0, 1, 0}, { 0,-1, 0},
+                { 0, 0, 1}, { 0, 0,-1}
+        };
+        Vector3f[] normals = new Vector3f[]{
+                new Vector3f( 1, 0, 0), new Vector3f(-1, 0, 0),
+                new Vector3f( 0, 1, 0), new Vector3f( 0,-1, 0),
+                new Vector3f( 0, 0, 1), new Vector3f( 0, 0,-1)
+        };
+        for (int x = 0; x < Chunk.CHUNK_X; x++) {
+            for (int y = 0; y < Chunk.CHUNK_Y; y++) {
+                for (int z = 0; z < Chunk.CHUNK_Z; z++) {
+                    Block block = chunk.getBlock(x, y, z);
+                    if (!block.isOpaque()) continue;
+                    for (int f = 0; f < 6; f++) {
+                        int wx = chunk.getOriginX() + x;
+                        int wy = y;
+                        int wz = chunk.getOriginZ() + z;
+                        int nwx = wx + dirs[f][0];
+                        int nwy = wy + dirs[f][1];
+                        int nwz = wz + dirs[f][2];
+                        boolean neighborSolid = (world != null) && world.isSolid(nwx, nwy, nwz);
+                        if (neighborSolid) continue;
+                        String texName = block.getFaceTextureName(f);
+                        Acc acc = accs.computeIfAbsent(texName, k -> new Acc());
+                        addFace(acc.verts, acc.inds, x, y, z, f, normals[f], acc.indexOffset);
+                        acc.indexOffset += 4;
+                    }
+                }
+            }
+        }
+        List<MeshBatch> out = new ArrayList<>();
+        for (Map.Entry<String, Acc> e : accs.entrySet()) {
+            Acc a = e.getValue();
+            if (a.inds.isEmpty()) continue;
+            float[] vertices = new float[a.verts.size()];
+            for (int i = 0; i < a.verts.size(); i++) vertices[i] = a.verts.get(i);
+            int[] indices = new int[a.inds.size()];
+            for (int i = 0; i < a.inds.size(); i++) indices[i] = a.inds.get(i);
+            Mesh mesh = new Mesh(vertices, indices);
+            String texPath = e.getKey();
+            Texture tex = new Texture(texPath);
+            out.add(new MeshBatch(mesh, tex, texPath));
+        }
+        return out;
+    }
+
+    private List<MeshBatch> buildChunkMeshes(Chunk chunk, boolean useGreedy) {
+        return useGreedy ? buildChunkMeshesGreedy(chunk) : buildChunkMeshesNonGreedy(chunk);
+    }
+
 }
