@@ -32,6 +32,14 @@ public class Main {
 
     private long lastTimeNanos;
 
+    private int frameCount = 0;
+    private double fpsTimer = 0;
+    private int currentFps = 0;
+
+    // Pour effet de transition FOV
+    private float currentFov = 70.0f;
+    private final float fovTransitionSpeed = 8.5f; // Plus grand = plus rapide
+
     public void run() throws Exception {
         init();
         loop();
@@ -92,6 +100,16 @@ public class Main {
             lastTimeNanos = now;
             if (dt > 0.05f) dt = 0.05f; // clamp to avoid huge steps
 
+            // FPS counter
+            frameCount++;
+            fpsTimer += dt;
+            if (fpsTimer >= 1.0) {
+                currentFps = frameCount;
+                frameCount = 0;
+                fpsTimer = 0;
+                glfwSetWindowTitle(window, "Minecraft Clone - FPS: " + currentFps);
+            }
+
             // Mouse look
             Vector2d mouse = new Vector2d();
             try (var stack = org.lwjgl.system.MemoryStack.stackPush()) {
@@ -129,8 +147,18 @@ public class Main {
             Vector3f right = new Vector3f(forward.z, 0, -forward.x);
             Vector3f worldWish = new Vector3f(0,0,0);
             worldWish.fma(wish.z, forward).fma(wish.x, right);
-            float moveSpeed = 0.5f;
+
+            // Sprint
+            boolean sprint = glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS;
+            float moveSpeed = sprint ? 5.612f : 4.317f;
             worldWish.mul(moveSpeed);
+
+            // FOV cible selon le sprint
+            float targetFov = sprint ? 90.0f : 70.0f;
+            // Interpolation lissée du FOV
+            currentFov += (targetFov - currentFov) * Math.min(1, fovTransitionSpeed * dt);
+            cam.setFov(currentFov);
+            windowWrapper.setFov(currentFov);
 
             boolean jump = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
 
@@ -147,8 +175,9 @@ public class Main {
                 final Player.State snap = player.snapshot();
                 final Vector3f wishCopy = new Vector3f(worldWish);
                 final boolean jumpCopy = jump;
+                final boolean sprintCopy = sprint;
                 final float dtCopy = dt;
-                pendingSim = physicsExec.submit(() -> Player.simulate(world, dtCopy, wishCopy, jumpCopy, snap));
+                pendingSim = physicsExec.submit(() -> Player.simulate(world, dtCopy, wishCopy, jumpCopy, sprintCopy, snap));
             }
 
             // Update camera to follow player (uses last applied state)

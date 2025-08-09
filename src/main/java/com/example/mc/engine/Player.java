@@ -41,38 +41,62 @@ public class Player {
         this.onGround = s.onGround;
     }
 
-    // Non-mutating simulation usable from any thread
-    public static State simulate(World world, float dt, Vector3f wishMove, boolean jumpRequested, State in) {
+    // Nouvelle version fidèle à Minecraft
+    // Ajout du paramètre sprintRequested
+    public static State simulate(World world, float dt, Vector3f wishMove, boolean jumpRequested, boolean sprintRequested, State in) {
         Vector3f pos = new Vector3f(in.position);
         Vector3f vel = new Vector3f(in.velocity);
         boolean onGroundLocal = in.onGround;
 
-        // Apply gravity
-        float gravity = -25.0f; // m/s^2
+        // Paramètres ajustés pour une sensation plus "Minecraft Java" rapide
+        final float gravity = -0.25f / 0.01f; // gravité plus forte (≈ -5 m/s²)
+        final float jumpVel = 8.0f; // saut plus puissant (≈ 10.4 m/s)
+        final float walkAccel = 0.18f / 0.01f; // accélération plus forte (≈ 3.6 m/s²)
+        final float sprintAccel = 0.23f / 0.01f; // accélération sprint (≈ 4.6 m/s²)
+        final float walkFriction = 0.86f;
+        final float airFriction = 0.865f;
+        final float maxWalkSpeed = 6.0f; // vitesse de marche plus élevée
+        final float maxSprintSpeed = 7.0f; // vitesse de sprint plus élevée
+
+        // Appliquer la gravité
         vel.y += gravity * dt;
 
-        // Apply horizontal movement (wishMove expected as world-space desired velocity)
-        float accel = 50.0f;
-        vel.x += wishMove.x * accel * dt;
-        vel.z += wishMove.z * accel * dt;
+        // Accélération horizontale
+        float accel = sprintRequested ? sprintAccel : walkAccel;
+        float maxSpeed = sprintRequested ? maxSprintSpeed : maxWalkSpeed;
+        Vector3f wishDir = new Vector3f(wishMove.x, 0, wishMove.z);
+        if (wishDir.lengthSquared() > 0) wishDir.normalize();
+        Vector3f horizVel = new Vector3f(vel.x, 0, vel.z);
+        float currentSpeed = horizVel.dot(wishDir);
+        float addSpeed = maxSpeed - currentSpeed;
+        if (addSpeed > 0) {
+            float accelAmount = accel * dt * maxSpeed;
+            if (accelAmount > addSpeed) accelAmount = addSpeed;
+            vel.x += wishDir.x * accelAmount;
+            vel.z += wishDir.z * accelAmount;
+        }
 
-        // Dampen horizontal speed slightly
-        float friction = onGroundLocal ? 8.0f : 2.0f;
-        vel.x -= vel.x * Math.min(1.0f, friction * dt);
-        vel.z -= vel.z * Math.min(1.0f, friction * dt);
+        // Friction
+        if (onGroundLocal) {
+            vel.x *= walkFriction;
+            vel.z *= walkFriction;
+        } else {
+            vel.x *= airFriction;
+            vel.z *= airFriction;
+        }
 
-        // Jump
+        // Saut
         if (jumpRequested && onGroundLocal) {
-            vel.y = 8.5f;
+            vel.y = jumpVel;
             onGroundLocal = false;
         }
 
-        // Move with collision resolution per-axis
+        // Déplacement avec résolution de collision par axe
         pos.x = moveAxis(world, pos.x, pos.y, pos.z, vel.x * dt, Axis.X, vel);
         pos.y = moveAxis(world, pos.x, pos.y, pos.z, vel.y * dt, Axis.Y, vel);
         pos.z = moveAxis(world, pos.x, pos.y, pos.z, vel.z * dt, Axis.Z, vel);
 
-        // After Y movement, if we collided with ground, set onGround
+        // Après le mouvement Y, si on touche le sol, on est au sol
         if (vel.y <= 0 && collidedBelow(world, pos)) {
             onGroundLocal = true;
             vel.y = 0;
@@ -85,9 +109,20 @@ public class Player {
         return new State(pos, vel, onGroundLocal);
     }
 
+    // Ajout d'une surcharge pour compatibilité ascendante
+    public static State simulate(World world, float dt, Vector3f wishMove, boolean jumpRequested, State in) {
+        // Par défaut, pas de sprint
+        return simulate(world, dt, wishMove, jumpRequested, false, in);
+    }
+
     public void update(World world, float dt, Vector3f wishMove, boolean jumpRequested) {
         // Keep the synchronous update behavior by delegating to simulate
         State out = simulate(world, dt, wishMove, jumpRequested, snapshot());
+        apply(out);
+    }
+
+    public void update(World world, float dt, Vector3f wishMove, boolean jumpRequested, boolean sprintRequested) {
+        State out = simulate(world, dt, wishMove, jumpRequested, sprintRequested, snapshot());
         apply(out);
     }
 
