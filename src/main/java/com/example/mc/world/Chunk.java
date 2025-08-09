@@ -11,6 +11,8 @@ public class Chunk {
     private final int originX;
     private final int originZ;
     private final int[][][] blocks = new int[CHUNK_X][CHUNK_Y][CHUNK_Z];
+    // Version increments when the chunk's block data is updated (e.g., generation complete)
+    private volatile int version = 0;
 
     public Chunk(int originX, int originZ) {
         this.originX = originX;
@@ -25,4 +27,7 @@ public class Chunk {
 
     public void setBlockId(int x, int y, int z, int id) { blocks[x][y][z] = id; }
     public void setBlock(int x, int y, int z, Block block) { setBlockId(x, y, z, block.getId()); }
+
+    public int getVersion() { return version; }
+    public void bumpVersion() { version++; }
 }

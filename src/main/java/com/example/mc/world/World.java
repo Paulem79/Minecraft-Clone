@@ -9,70 +9,65 @@ import java.util.concurrent.*;
 public class World {
     private final Map<Long, Chunk> chunks = new ConcurrentHashMap<>();
     private final PerlinNoise noise = new PerlinNoise(UUID.randomUUID().toString().hashCode());
+    // Background executor for async chunk generation
+    private final ExecutorService chunkExecutor = Executors.newFixedThreadPool(Math.max(2, Runtime.getRuntime().availableProcessors() - 1));
+    // Track which chunk keys are currently being generated to avoid duplicate tasks
+    private final Set<Long> generating = ConcurrentHashMap.newKeySet();
 
     private static long key(int cx, int cz) { return (((long)cx) << 32) ^ (cz & 0xffffffffL); }
 
     public World() {
-        // generate initial chunks around origin
+        // schedule initial chunks around origin asynchronously
         ensureChunksAround(0, 0, 2);
     }
 
     private Chunk createChunk(int cx, int cz) {
         int originX = cx * Chunk.CHUNK_X;
         int originZ = cz * Chunk.CHUNK_Z;
-        Chunk chunk = new Chunk(originX, originZ);
-        generateTerrainForChunk(chunk);
-        return chunk;
+        return new Chunk(originX, originZ);
     }
 
-    private void generateTerrainForChunk(Chunk chunk) {
-        int threads = Math.max(2, Runtime.getRuntime().availableProcessors());
-        ExecutorService pool = Executors.newFixedThreadPool(threads);
-        List<Runnable> tasks = new ArrayList<>();
-
-        int baseX = chunk.getOriginX();
-        int baseZ = chunk.getOriginZ();
-
-        for (int x = 0; x < Chunk.CHUNK_X; x++) {
-            final int fx = x;
-            tasks.add(() -> {
-                for (int z = 0; z < Chunk.CHUNK_Z; z++) {
-                    // Multi-octave Perlin height for nicer terrain (use world coordinates)
-                    double wx = (baseX + fx) * 0.05;
-                    double wz = (baseZ + z) * 0.05;
-                    double amp = 1.0;
-                    double freq = 1.0;
-                    double sum = 0.0;
-                    double ampSum = 0.0;
-                    for (int o = 0; o < 4; o++) { // 4 octaves
-                        sum += noise.noise(wx * freq, wz * freq) * amp;
-                        ampSum += amp;
-                        amp *= 0.5;
-                        freq *= 2.0;
-                    }
-                    double n = sum / ampSum; // roughly [-1,1]
-                    double height = (n + 1.0) * 0.5 * 48.0 + 40.0; // approx 40..88
-                    int h = (int) height;
-                    if (h >= Chunk.CHUNK_Y) h = Chunk.CHUNK_Y - 1;
-                    for (int y = 0; y < Chunk.CHUNK_Y; y++) {
-                        if (y <= h) {
-                            if (y == h) chunk.setBlock(fx, y, z, Blocks.GRASS_BLOCK);
-                            else chunk.setBlock(fx, y, z, Blocks.DIRT);
-                        } else {
-                            chunk.setBlock(fx, y, z, Blocks.AIR);
+    // Schedules async generation of the specified chunk if not already generating
+    private void scheduleGeneration(long k, Chunk chunk, int cx, int cz) {
+        if (!generating.add(k)) return; // already generating
+        final int baseX = chunk.getOriginX();
+        final int baseZ = chunk.getOriginZ();
+        chunkExecutor.submit(() -> {
+            try {
+                for (int x = 0; x < Chunk.CHUNK_X; x++) {
+                    for (int z = 0; z < Chunk.CHUNK_Z; z++) {
+                        double wx = (baseX + x) * 0.05;
+                        double wz = (baseZ + z) * 0.05;
+                        double amp = 1.0;
+                        double freq = 1.0;
+                        double sum = 0.0;
+                        double ampSum = 0.0;
+                        for (int o = 0; o < 4; o++) {
+                            sum += noise.noise(wx * freq, wz * freq) * amp;
+                            ampSum += amp;
+                            amp *= 0.5;
+                            freq *= 2.0;
+                        }
+                        double n = sum / ampSum;
+                        double height = (n + 1.0) * 0.5 * 48.0 + 40.0;
+                        int h = (int) height;
+                        if (h >= Chunk.CHUNK_Y) h = Chunk.CHUNK_Y - 1;
+                        for (int y = 0; y < Chunk.CHUNK_Y; y++) {
+                            if (y <= h) {
+                                if (y == h) chunk.setBlock(x, y, z, Blocks.GRASS_BLOCK);
+                                else chunk.setBlock(x, y, z, Blocks.DIRT);
+                            } else {
+                                chunk.setBlock(x, y, z, Blocks.AIR);
+                            }
                         }
                     }
                 }
-            });
-        }
-
-        for (Runnable r : tasks) pool.submit(r);
-        pool.shutdown();
-        try {
-            pool.awaitTermination(5, TimeUnit.MINUTES);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+                // Mark chunk updated for renderers to rebuild meshes
+                chunk.bumpVersion();
+            } finally {
+                generating.remove(k);
+            }
+        });
     }
 
     public boolean isSolid(int x, int y, int z) {
@@ -99,10 +94,27 @@ public class World {
                 int cx = centerCx + dx;
                 int cz = centerCz + dz;
                 long k = key(cx, cz);
-                chunks.computeIfAbsent(k, kk -> createChunk(cx, cz));
+                Chunk chunk = chunks.computeIfAbsent(k, kk -> createChunk(cx, cz));
+                // If this chunk has not been generated yet (version==0), schedule generation
+                if (chunk.getVersion() == 0) {
+                    scheduleGeneration(k, chunk, cx, cz);
+                }
             }
         }
     }
 
     public Collection<Chunk> getChunks() { return chunks.values(); }
+
+    // Gracefully shutdown background generation threads
+    public void shutdown() {
+        chunkExecutor.shutdown();
+        try {
+            if (!chunkExecutor.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                chunkExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            chunkExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
 }

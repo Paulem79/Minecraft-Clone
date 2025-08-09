@@ -25,11 +25,18 @@ public class Renderer {
 
     private Texture grassSideOverlayTex;
 
+    // Texture cache to avoid reloading the same texture many times
+    private final Map<String, Texture> textureCache = new HashMap<>();
+
     // Batches (one mesh per texture/block type) kept for legacy single-chunk path
     private List<MeshBatch> batches = new ArrayList<>();
     // Cache meshes per chunk for multi-chunk rendering
-    private record ChunkMesh(List<MeshBatch> list, boolean greedy) {}
+    private record ChunkMesh(List<MeshBatch> list, boolean greedy, int version) {}
     private final Map<Chunk, ChunkMesh> meshCache = new HashMap<>();
+
+    // Queue of chunks that need mesh (re)build; processed with small budget per frame to avoid spikes
+    private final ArrayDeque<Chunk> meshBuildQueue = new ArrayDeque<>();
+    private int meshesPerFrameBudget = 2;
 
     public void init() {
         // Active OpenGL
@@ -63,6 +70,10 @@ public class Renderer {
         return camera;
     }
 
+    private Texture getOrCreateTexture(String path) {
+        return textureCache.computeIfAbsent(path, Texture::new);
+    }
+
     public void render(Window window) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -79,6 +90,24 @@ public class Renderer {
         shader.setUniform3f("biomeGrassColor", com.example.mc.world.Biome.NORMAL.grassR(), com.example.mc.world.Biome.NORMAL.grassG(), com.example.mc.world.Biome.NORMAL.grassB());
 
         if (world != null) {
+            // Rebuild up to a small number of chunk meshes per frame to avoid spikes
+            int rebuilt = 0;
+            while (rebuilt < meshesPerFrameBudget && !meshBuildQueue.isEmpty()) {
+                Chunk qc = meshBuildQueue.pollFirst();
+                if (qc == null) break;
+                // Determine greedy based on current camera distance
+                float qccx = qc.getOriginX() + Chunk.CHUNK_X * 0.5f;
+                float qccz = qc.getOriginZ() + Chunk.CHUNK_Z * 0.5f;
+                float qdx = camera.getPosition().x - qccx;
+                float qdz = camera.getPosition().z - qccz;
+                float qdist = (float)Math.sqrt(qdx * qdx + qdz * qdz);
+                boolean qGreedy = qdist > 80.0f;
+                int qver = qc.getVersion();
+                List<MeshBatch> qlist = buildChunkMeshes(qc, qGreedy);
+                meshCache.put(qc, new ChunkMesh(qlist, qGreedy, qver));
+                rebuilt++;
+            }
+
             // Render all loaded chunks with per-chunk model transform
             Collection<Chunk> chunks = world.getChunks();
             float camX = camera.getPosition().x;
@@ -93,10 +122,17 @@ public class Renderer {
                 boolean useGreedy = dist > 80.0f;
 
                 ChunkMesh cm = meshCache.get(c);
-                if (cm == null || cm.greedy != useGreedy) {
-                    List<MeshBatch> list = buildChunkMeshes(c, useGreedy);
-                    cm = new ChunkMesh(list, useGreedy);
-                    meshCache.put(c, cm);
+                int ver = c.getVersion();
+                boolean needRebuild = (cm == null || cm.greedy != useGreedy || cm.version != ver);
+                if (needRebuild) {
+                    // enqueue if not already queued
+                    if (!meshBuildQueue.contains(c)) {
+                        meshBuildQueue.addLast(c);
+                    }
+                }
+                if (cm == null) {
+                    // nothing to render yet
+                    continue;
                 }
                 Matrix4f model = new Matrix4f().translation(c.getOriginX(), 0, c.getOriginZ());
                 shader.setUniformMat4("model", model);
@@ -328,7 +364,7 @@ public class Renderer {
             for (int i = 0; i < a.inds.size(); i++) indices[i] = a.inds.get(i);
             Mesh mesh = new Mesh(vertices, indices);
             String texPath = e.getKey();
-            Texture tex = new Texture(texPath);
+            Texture tex = getOrCreateTexture(texPath);
             out.add(new MeshBatch(mesh, tex, texPath));
         }
         return out;
@@ -398,9 +434,12 @@ public class Renderer {
             }
         }
         meshCache.clear();
-        for (Block block : new HashSet<>(Blocks.blocks.values())) {
-            if (block != null && block.getTexture() != null) block.getTexture().delete();
+        // Delete cached textures we created
+        if (grassSideOverlayTex != null) grassSideOverlayTex.delete();
+        for (Texture t : new HashSet<>(textureCache.values())) {
+            if (t != null) t.delete();
         }
+        textureCache.clear();
         if (shader != null) shader.delete();
     }
 
@@ -454,7 +493,7 @@ public class Renderer {
             for (int i = 0; i < a.inds.size(); i++) indices[i] = a.inds.get(i);
             Mesh mesh = new Mesh(vertices, indices);
             String texPath = e.getKey();
-            Texture tex = new Texture(texPath);
+            Texture tex = getOrCreateTexture(texPath);
             out.add(new MeshBatch(mesh, tex, texPath));
         }
         return out;

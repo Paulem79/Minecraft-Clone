@@ -10,6 +10,8 @@ import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFWErrorCallback;
 import org.lwjgl.opengl.GL;
 
+import java.util.concurrent.*;
+
 import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.system.MemoryUtil.NULL;
 
@@ -20,6 +22,10 @@ public class Main {
     private Window windowWrapper;
     private World world;
     private Player player;
+
+    // Physics executor for player movement on a separate thread
+    private ExecutorService physicsExec;
+    private Future<Player.State> pendingSim;
 
     private double lastMouseX, lastMouseY;
     private boolean firstMouse = true;
@@ -66,6 +72,12 @@ public class Main {
 
         player = new Player();
         player.setPosition(8, 120, 8);
+
+        physicsExec = Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "physics-thread");
+            t.setDaemon(true);
+            return t;
+        });
 
         lastTimeNanos = System.nanoTime();
     }
@@ -122,9 +134,24 @@ public class Main {
 
             boolean jump = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
 
-            player.update(world, dt, worldWish, jump);
+            // Apply last finished simulation result if ready
+            if (pendingSim != null && pendingSim.isDone()) {
+                try {
+                    Player.State result = pendingSim.get();
+                    player.apply(result);
+                } catch (Exception ignored) { }
+                pendingSim = null;
+            }
+            // If no simulation is pending, start a new one with current inputs
+            if (pendingSim == null) {
+                final Player.State snap = player.snapshot();
+                final Vector3f wishCopy = new Vector3f(worldWish);
+                final boolean jumpCopy = jump;
+                final float dtCopy = dt;
+                pendingSim = physicsExec.submit(() -> Player.simulate(world, dtCopy, wishCopy, jumpCopy, snap));
+            }
 
-            // Update camera to follow player
+            // Update camera to follow player (uses last applied state)
             Vector3f pos = player.getPosition();
             cam.setPosition(pos.x, pos.y + 1.65f, pos.z);
 
@@ -138,6 +165,12 @@ public class Main {
     }
 
     private void cleanup() {
+        if (physicsExec != null) {
+            physicsExec.shutdownNow();
+        }
+        if (world != null) {
+            world.shutdown();
+        }
         renderer.cleanup();
         glfwDestroyWindow(window);
         glfwTerminate();
