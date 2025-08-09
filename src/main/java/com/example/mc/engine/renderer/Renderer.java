@@ -12,7 +12,7 @@ import org.lwjgl.opengl.GL;
 import java.util.*;
 import java.util.concurrent.*;
 
-import static org.lwjgl.opengl.GL11.*;
+import static org.lwjgl.opengl.GL46.*;
 
 public class Renderer {
 
