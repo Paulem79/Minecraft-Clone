@@ -1,4 +1,4 @@
-.idea
+/.idea/
 .mc-clone
 
 .gradle
@@ -46,4 +46,3 @@ bin/
 
 ### Mac OS ###
 .DS_Store
-/.idea/
