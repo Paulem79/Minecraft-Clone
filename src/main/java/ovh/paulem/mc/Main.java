@@ -12,6 +12,7 @@ import org.lwjgl.glfw.GLFWErrorCallback;
 import org.lwjgl.opengl.GL;
 import ovh.paulem.mc.world.block.Blocks;
 
+import java.awt.*;
 import java.util.concurrent.*;
 
 import static org.lwjgl.glfw.GLFW.*;
@@ -57,7 +58,7 @@ public class Main {
         cleanup();
     }
 
-    private void init() throws Exception {
+    private void init() {
         GLFWErrorCallback.createPrint(System.err).set();
 
         if (!glfwInit()) {
@@ -68,7 +69,10 @@ public class Main {
         glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-        window = glfwCreateWindow(1280, 720, "Minecraft Clone", NULL, NULL);
+        GraphicsDevice gd = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
+        int width = (gd.getDisplayMode().getWidth()/5)*3;
+        int height = (gd.getDisplayMode().getHeight()/5)*3;
+        window = glfwCreateWindow(width, height, "Minecraft Clone", NULL, NULL);
         if (window == NULL) {
             throw new RuntimeException("Échec création de fenêtre GLFW");
         }
@@ -94,7 +98,7 @@ public class Main {
             }
         });
 
-        windowWrapper = new Window(1280, 720);
+        windowWrapper = new Window(width, height);
         renderer = new Renderer();
         renderer.init();
 
