@@ -1,11 +1,11 @@
-package ovh.paulem.mc.engine.renderer;
+package ovh.paulem.mc.engine.render;
 
 import org.joml.Vector3f;
 import ovh.paulem.mc.engine.Hotbar;
 import ovh.paulem.mc.engine.Window;
-import ovh.paulem.mc.engine.renderer.texture.OverlayTexture;
-import ovh.paulem.mc.engine.renderer.texture.Texture;
-import ovh.paulem.mc.engine.renderer.texture.TintTexture;
+import ovh.paulem.mc.engine.render.texture.OverlayTexture;
+import ovh.paulem.mc.engine.render.texture.Texture;
+import ovh.paulem.mc.engine.render.texture.TintTexture;
 import ovh.paulem.mc.world.Biome;
 import ovh.paulem.mc.world.block.Face;
 import ovh.paulem.mc.world.block.types.Block;

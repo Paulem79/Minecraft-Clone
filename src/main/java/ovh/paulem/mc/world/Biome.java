@@ -1,7 +1,7 @@
 package ovh.paulem.mc.world;
 
 import org.joml.Vector3f;
-import ovh.paulem.mc.engine.renderer.texture.TintType;
+import ovh.paulem.mc.engine.render.texture.TintType;
 
 /**
  * Simple biome definition. Defines colors for grass and foliage (leaves).

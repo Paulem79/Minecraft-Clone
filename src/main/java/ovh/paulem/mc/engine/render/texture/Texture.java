@@ -1,12 +1,10 @@
-package ovh.paulem.mc.engine.renderer.texture;
+package ovh.paulem.mc.engine.render.texture;
 
 import org.lwjgl.stb.STBImage;
 import ovh.paulem.mc.world.block.types.Block;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URISyntaxException;
-import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.util.Map;

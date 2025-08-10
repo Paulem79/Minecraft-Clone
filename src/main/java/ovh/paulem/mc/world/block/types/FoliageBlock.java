@@ -1,8 +1,8 @@
 package ovh.paulem.mc.world.block.types;
 
-import ovh.paulem.mc.engine.renderer.texture.Texture;
-import ovh.paulem.mc.engine.renderer.texture.TintTexture;
-import ovh.paulem.mc.engine.renderer.texture.TintType;
+import ovh.paulem.mc.engine.render.texture.Texture;
+import ovh.paulem.mc.engine.render.texture.TintTexture;
+import ovh.paulem.mc.engine.render.texture.TintType;
 import ovh.paulem.mc.world.block.Face;
 
 import java.util.Map;

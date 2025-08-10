@@ -1,4 +1,4 @@
-package ovh.paulem.mc.engine.renderer.texture;
+package ovh.paulem.mc.engine.render.texture;
 
 import ovh.paulem.mc.world.block.types.Block;
 

@@ -1,4 +1,6 @@
-package ovh.paulem.mc.world;
+package ovh.paulem.mc.engine.render.light;
+
+import ovh.paulem.mc.world.Chunk;
 
 public class LightEngine {
     // Taille maximale de la lumière (0 = obscurité, 15 = lumière maximale)

@@ -1,7 +1,6 @@
 package ovh.paulem.mc.world.block.types;
 
-import ovh.paulem.mc.engine.renderer.texture.Texture;
-import ovh.paulem.mc.world.block.Face;
+import ovh.paulem.mc.engine.render.texture.Texture;
 
 import java.util.Map;
 

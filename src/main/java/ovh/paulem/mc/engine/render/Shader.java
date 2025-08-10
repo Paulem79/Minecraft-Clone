@@ -1,4 +1,4 @@
-package ovh.paulem.mc.engine.renderer;
+package ovh.paulem.mc.engine.render;
 
 import java.io.IOException;
 

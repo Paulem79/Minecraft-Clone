@@ -4,7 +4,7 @@ import ovh.paulem.mc.engine.Camera;
 import ovh.paulem.mc.engine.Hotbar;
 import ovh.paulem.mc.engine.Player;
 import ovh.paulem.mc.engine.Window;
-import ovh.paulem.mc.engine.renderer.Renderer;
+import ovh.paulem.mc.engine.render.Render;
 import ovh.paulem.mc.world.World;
 import org.joml.Vector2d;
 import org.joml.Vector3f;
@@ -21,7 +21,7 @@ import static org.lwjgl.system.MemoryUtil.NULL;
 public class Main {
 
     private long window;
-    private Renderer renderer;
+    private Render render;
 
     private Window windowWrapper;
     private World world;
@@ -99,14 +99,14 @@ public class Main {
         });
 
         windowWrapper = new Window(width, height);
-        renderer = new Renderer();
-        renderer.init();
+        render = new Render();
+        render.init();
 
         // Associer la hotbar au renderer
-        renderer.setHotbar(hotbar);
+        render.setHotbar(hotbar);
 
         world = new World();
-        renderer.setWorld(world);
+        render.setWorld(world);
 
         player = new Player();
         player.setPosition(8, 120, 8);
@@ -177,7 +177,7 @@ public class Main {
             lastMouseX = mouse.x;
             lastMouseY = mouse.y;
             float sensitivity = 0.1f;
-            Camera cam = renderer.getCamera();
+            Camera cam = render.getCamera();
             cam.moveRotation((float)(dy * sensitivity), (float)(dx * sensitivity), 0);
             // clamp pitch
             if (cam.getRotation().x > 89) cam.getRotation().x = 89;
@@ -236,7 +236,7 @@ public class Main {
             // Ensure chunks around player are generated
             world.update(pos.x, pos.z);
 
-            renderer.render(windowWrapper);
+            render.render(windowWrapper);
 
             glfwSwapBuffers(window);
         }
@@ -249,7 +249,7 @@ public class Main {
         if (world != null) {
             world.shutdown();
         }
-        renderer.shutdown();
+        render.shutdown();
         glfwDestroyWindow(window);
         glfwTerminate();
     }
@@ -271,7 +271,7 @@ public class Main {
 
     // Méthode pour le raycasting - détection des blocs
     private RaycastResult raycast() {
-        Camera camera = renderer.getCamera();
+        Camera camera = render.getCamera();
         Vector3f position = new Vector3f(camera.getPosition());
 
         // Direction du regard

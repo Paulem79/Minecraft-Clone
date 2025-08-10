@@ -1,4 +1,4 @@
-package ovh.paulem.mc.engine.renderer.texture;
+package ovh.paulem.mc.engine.render.texture;
 
 import java.util.HashMap;
 import java.util.Map;

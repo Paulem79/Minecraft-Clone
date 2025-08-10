@@ -1,6 +1,6 @@
 package ovh.paulem.mc.world.block;
 
-import ovh.paulem.mc.engine.renderer.texture.TintType;
+import ovh.paulem.mc.engine.render.texture.TintType;
 import ovh.paulem.mc.world.block.types.*;
 
 import java.util.HashMap;
