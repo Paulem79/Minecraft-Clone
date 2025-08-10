@@ -11,7 +11,7 @@ repositories {
 }
 
 val lwjglVersion = "3.3.1"
-val jomlVersion = "1.10.5"
+val jomlVersion = "1.10.8"
 
 dependencies {
     implementation("org.joml:joml:$jomlVersion")
