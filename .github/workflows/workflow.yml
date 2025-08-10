@@ -62,9 +62,9 @@ jobs:
       - uses: "marvinpinto/action-automatic-releases@latest"
         with:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          automatic_release_tag: ${{ github.ref }}
+          automatic_release_tag: build-${{ github.run_id }}
           prerelease: true
-          title: "${{ github.ref_name }}"
+          title: "Build ${{ github.run_id }}"
           files: |
             dist/*.deb
             dist/*.dmg
