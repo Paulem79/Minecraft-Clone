@@ -7,12 +7,6 @@ import ovh.paulem.mc.world.block.types.Block;
  * Utilisée pour l'herbe et les feuilles
  */
 public class TintTexture extends Texture {
-    // Type de teinte
-    public enum TintType {
-        GRASS,
-        FOLIAGE
-    }
-
     private final TintType tintType;
 
     public TintTexture(Block baseBlock, String resourcePath, TintType tintType) {

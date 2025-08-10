@@ -3,10 +3,7 @@ package ovh.paulem.mc.engine.renderer;
 import ovh.paulem.mc.engine.Camera;
 import ovh.paulem.mc.engine.Hotbar;
 import ovh.paulem.mc.engine.Window;
-import ovh.paulem.mc.engine.renderer.texture.OverlayTexture;
-import ovh.paulem.mc.engine.renderer.texture.Texture;
-import ovh.paulem.mc.engine.renderer.texture.Textures;
-import ovh.paulem.mc.engine.renderer.texture.TintTexture;
+import ovh.paulem.mc.engine.renderer.texture.*;
 import ovh.paulem.mc.world.Biome;
 import ovh.paulem.mc.world.block.types.Block;
 import ovh.paulem.mc.world.Chunk;
@@ -209,9 +206,9 @@ public class Renderer {
         if (batch.texture != null && batch.texturePath != null) {
             // Configure le mode de rendu en fonction du type de texture
             if (batch.texture instanceof TintTexture tintTex) {
-                if (tintTex.getTintType() == TintTexture.TintType.GRASS) {
+                if (tintTex.getTintType() == TintType.GRASS) {
                     mode = 1; // tint base with biome grass color
-                } else if (tintTex.getTintType() == TintTexture.TintType.FOLIAGE) {
+                } else if (tintTex.getTintType() == TintType.FOLIAGE) {
                     mode = 3; // tint with biome foliage color
                 }
             } else if (batch.texture instanceof OverlayTexture) {

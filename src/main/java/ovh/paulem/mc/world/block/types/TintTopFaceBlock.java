@@ -2,29 +2,16 @@ package ovh.paulem.mc.world.block.types;
 
 import ovh.paulem.mc.engine.renderer.texture.Texture;
 import ovh.paulem.mc.engine.renderer.texture.TintTexture;
-import ovh.paulem.mc.world.block.Face;
+import ovh.paulem.mc.engine.renderer.texture.TintType;
 
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 public class TintTopFaceBlock extends TopFaceBlock implements Tintable {
-    protected final TintTexture.TintType tintType;
+    protected final TintType tintType;
 
-    public TintTopFaceBlock(String name, int id, TintTexture.TintType tintType) {
+    public TintTopFaceBlock(String name, int id, TintType tintType) {
         super(name, id);
         this.tintType = tintType;
-    }
-
-    @Override
-    public Map<Face, List<Texture>> getTextures() {
-        Map<Face, List<Texture>> textures = super.getTextures();
-
-        List<Texture> topTextures = textures.get(Face.POS_Y);
-        topTextures.add(new TintTexture(this, "/textures/" + name + "_top.png", tintType));
-        textures.put(Face.POS_Y, topTextures);
-
-        return textures;
     }
 
     @Override
@@ -36,7 +23,7 @@ public class TintTopFaceBlock extends TopFaceBlock implements Tintable {
     }
 
     @Override
-    public TintTexture.TintType getTintType() {
+    public TintType getTintType() {
         return tintType;
     }
 }

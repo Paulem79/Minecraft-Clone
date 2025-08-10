@@ -12,7 +12,7 @@ public class OverlayTexture extends Texture {
 
     public OverlayTexture(Block baseBlock, String baseTexturePath, String overlayTexturePath) {
         super(baseBlock, baseTexturePath);
-        this.overlay = new TintTexture(baseBlock, overlayTexturePath, TintTexture.TintType.GRASS);
+        this.overlay = new TintTexture(baseBlock, overlayTexturePath, TintType.GRASS);
     }
 
     public TintTexture getOverlay() {

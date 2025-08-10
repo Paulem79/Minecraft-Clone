@@ -4,7 +4,6 @@ import ovh.paulem.mc.engine.renderer.texture.Texture;
 import ovh.paulem.mc.engine.renderer.texture.Textures;
 import ovh.paulem.mc.world.block.Face;
 
-import java.util.List;
 import java.util.Map;
 
 import static ovh.paulem.mc.world.block.Blocks.AIR;
@@ -29,8 +28,6 @@ public abstract class Block {
     public String getName() {
         return name;
     }
-
-    public abstract Map<Face, List<Texture>> getTextures();
 
     public String getFaceTextureName(Face face) {
         return "/textures/" + name + ".png";
@@ -59,7 +56,7 @@ public abstract class Block {
         return transparent;
     }
 
-    public boolean isBlock() { return id != AIR.getId(); }
+    public boolean isBlock() { return this != AIR; }
 
     @Override
     public String toString() {

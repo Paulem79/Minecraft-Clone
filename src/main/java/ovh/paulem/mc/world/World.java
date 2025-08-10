@@ -1,6 +1,7 @@
 package ovh.paulem.mc.world;
 
-import ovh.paulem.mc.util.PerlinNoise;
+import ovh.paulem.mc.Values;
+import ovh.paulem.mc.math.PerlinNoise;
 import ovh.paulem.mc.world.block.types.Block;
 import ovh.paulem.mc.world.block.Blocks;
 
@@ -8,31 +9,37 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public class World {
+
     private final Map<Long, Chunk> chunks = new ConcurrentHashMap<>();
-    private final PerlinNoise noise = new PerlinNoise(UUID.randomUUID().toString().hashCode());
+
+    public Collection<Chunk> getChunks() {
+        return chunks.values();
+    }
+
+    private final PerlinNoise noise = new PerlinNoise(Values.SEED);
     // Bruit de Perlin pour les caves
-    private final PerlinNoise caveNoise = new PerlinNoise(UUID.randomUUID().toString().hashCode() + 1);
+    private final PerlinNoise caveNoise = new PerlinNoise(Values.SEED);
     // Bruits additionnels pour la diversité des cavernes
-    private final PerlinNoise caveSizeNoise = new PerlinNoise(UUID.randomUUID().toString().hashCode() + 2);
-    private final PerlinNoise caveFloorNoise = new PerlinNoise(UUID.randomUUID().toString().hashCode() + 3);
+    private final PerlinNoise caveSizeNoise = new PerlinNoise(Values.SEED);
+    private final PerlinNoise caveFloorNoise = new PerlinNoise(Values.SEED);
     // Background executor for async chunk generation
     private final ExecutorService chunkExecutor = Executors.newFixedThreadPool(Math.max(2, Runtime.getRuntime().availableProcessors() - 1));
     // Track which chunk keys are currently being generated to avoid duplicate tasks
     private final Set<Long> generating = ConcurrentHashMap.newKeySet();
 
-    // Configuration des caves
-    private static final double BASE_CAVE_SCALE = 0.03; // Échelle de base du bruit pour les caves
-    private static final double SIZE_NOISE_SCALE = 0.015; // Échelle du bruit pour la variation de taille
-    private static final double FLOOR_NOISE_SCALE = 0.08; // Échelle du bruit pour la variation du plancher
-    private static final double CAVE_THRESHOLD = 0.25; // Seuil de base pour la création de caves
-    private static final int MIN_CAVE_HEIGHT = 5; // Hauteur minimale pour les caves
-    private static final int MAX_CAVE_HEIGHT = 60; // Hauteur maximale pour les caves
-    private static final int FLOOR_VARIATION_AMPLITUDE = 4; // Amplitude des variations de hauteur du plancher
-    private static final int TRANSITION_HEIGHT = 10; // Hauteur sur laquelle la probabilité de générer des caves diminue près du fond
+    // Système de sauvegarde et chargement de chunks
+    private final ChunkIO chunkIO;
+    // Rayon de rendu des chunks autour du joueur
+    private final int renderRadius = 5;
+    // Rayon supplémentaire pour ne pas décharger immédiatement les chunks
+    private final int unloadBuffer = 2;
 
     private static long key(int cx, int cz) { return (((long)cx) << 32) ^ (cz & 0xffffffffL); }
 
     public World() {
+        // Nom du monde - peut être paramétrable dans le futur
+        chunkIO = new ChunkIO("default");
+
         // schedule initial chunks around origin asynchronously
         ensureChunksAround(0, 0, 2);
     }
@@ -84,24 +91,24 @@ public class World {
                 // Génération des caves avec bruit de Perlin 3D
                 for (int x = 0; x < Chunk.CHUNK_X; x++) {
                     for (int z = 0; z < Chunk.CHUNK_Z; z++) {
-                        for (int y = MIN_CAVE_HEIGHT; y < MAX_CAVE_HEIGHT; y++) {
+                        for (int y = Values.MIN_CAVE_HEIGHT; y < Values.MAX_CAVE_HEIGHT; y++) {
                             // Ne pas générer des caves dans l'air
                             if (!chunk.getBlock(x, y, z).isBlock()) {
                                 continue;
                             }
 
                             // Coordonnées absolues pour les différents bruits
-                            double wx = (baseX + x) * BASE_CAVE_SCALE;
-                            double wy = y * BASE_CAVE_SCALE;
-                            double wz = (baseZ + z) * BASE_CAVE_SCALE;
+                            double wx = (baseX + x) * Values.BASE_CAVE_SCALE;
+                            double wy = y * Values.BASE_CAVE_SCALE;
+                            double wz = (baseZ + z) * Values.BASE_CAVE_SCALE;
 
                             // Coordonnées pour les variations de taille et de plancher
-                            double wx2 = (baseX + x) * SIZE_NOISE_SCALE;
-                            double wy2 = y * SIZE_NOISE_SCALE;
-                            double wz2 = (baseZ + z) * SIZE_NOISE_SCALE;
+                            double wx2 = (baseX + x) * Values.SIZE_NOISE_SCALE;
+                            double wy2 = y * Values.SIZE_NOISE_SCALE;
+                            double wz2 = (baseZ + z) * Values.SIZE_NOISE_SCALE;
 
-                            double wx3 = (baseX + x) * FLOOR_NOISE_SCALE;
-                            double wz3 = (baseZ + z) * FLOOR_NOISE_SCALE;
+                            double wx3 = (baseX + x) * Values.FLOOR_NOISE_SCALE;
+                            double wz3 = (baseZ + z) * Values.FLOOR_NOISE_SCALE;
 
                             // Bruit de base pour les caves
                             double caveValue = caveNoise.noise(wx, wy, wz);
@@ -110,44 +117,38 @@ public class World {
                             double sizeVariation = caveSizeNoise.noise(wx2, wy2, wz2) * 0.5 + 0.5; // 0-1
 
                             // Variation du plancher (pour éviter les fonds plats)
-                            double floorVariation = caveFloorNoise.noise(wx3, wz3) * FLOOR_VARIATION_AMPLITUDE;
+                            double floorVariation = caveFloorNoise.noise(wx3, wz3) * Values.FLOOR_VARIATION_AMPLITUDE;
 
                             // Ajustement du seuil en fonction de la hauteur (transitions graduelles près du fond)
-                            double threshold = CAVE_THRESHOLD;
+                            double threshold = Values.CAVE_THRESHOLD;
 
                             // Réduire progressivement la probabilité des caves près du fond
-                            if (y < MIN_CAVE_HEIGHT + TRANSITION_HEIGHT) {
+                            if (y < Values.MIN_CAVE_HEIGHT + Values.TRANSITION_HEIGHT) {
                                 // Plus on est proche du fond, plus le seuil est élevé (moins de chances de générer une cave)
-                                double factor = (double)(y - MIN_CAVE_HEIGHT) / TRANSITION_HEIGHT;
-                                threshold = CAVE_THRESHOLD + (1.0 - factor) * 0.4; // 0.4 est l'augmentation maximale du seuil
+                                double factor = (double)(y - Values.MIN_CAVE_HEIGHT) / Values.TRANSITION_HEIGHT;
+                                threshold = Values.CAVE_THRESHOLD + (1.0 - factor) * 0.4; // 0.4 est l'augmentation maximale du seuil
                             }
 
                             // Ajouter des variations de plancher basées sur le bruit
-                            int effectiveMinHeight = MIN_CAVE_HEIGHT;
-                            if (y < MIN_CAVE_HEIGHT + FLOOR_VARIATION_AMPLITUDE) {
+                            int effectiveMinHeight = Values.MIN_CAVE_HEIGHT;
+                            if (y < Values.MIN_CAVE_HEIGHT + Values.FLOOR_VARIATION_AMPLITUDE) {
                                 // Vérifier si ce bloc est au-dessus du plancher ondulé
-                                int adjustedFloorHeight = MIN_CAVE_HEIGHT + (int)floorVariation;
+                                int adjustedFloorHeight = Values.MIN_CAVE_HEIGHT + (int)floorVariation;
                                 if (y < adjustedFloorHeight) {
                                     continue; // Ne pas creuser sous le plancher ondulé
                                 }
                             }
 
                             // Ajuster le seuil en fonction de la taille pour créer des cavernes de tailles variées
-                            double adjustedThreshold = threshold - sizeVariation * 0.2; // Variations de seuil ±0.2
+                            double adjustedThreshold = threshold - sizeVariation * Values.SIZE_VARIATION;
 
                             // Si la valeur est supérieure au seuil, créer une cavité
                             if (caveValue > adjustedThreshold) {
                                 chunk.setBlock(x, y, z, Blocks.AIR);
 
                                 // Occasionnellement étendre verticalement pour créer des cavernes plus hautes
-                                if (sizeVariation > 0.7 && y + 1 < MAX_CAVE_HEIGHT && chunk.getBlock(x, y + 1, z).isBlock()) {
+                                if (sizeVariation > 0.7 && y + 1 < Values.MAX_CAVE_HEIGHT && chunk.getBlock(x, y + 1, z).isBlock()) {
                                     chunk.setBlock(x, y + 1, z, Blocks.AIR);
-                                }
-
-                                // Parfois créer des colonnes ou des stalactites/stalagmites
-                                if (sizeVariation < 0.2 && Math.random() < 0.05) {
-                                    // Laisser ce bloc solide
-                                    chunk.setBlock(x, y, z, Blocks.STONE);
                                 }
                             }
                         }
@@ -205,8 +206,12 @@ public class World {
     public void update(float playerX, float playerZ) {
         int pcx = Math.floorDiv((int)Math.floor(playerX), Chunk.CHUNK_X);
         int pcz = Math.floorDiv((int)Math.floor(playerZ), Chunk.CHUNK_Z);
-        ensureChunksAround(pcx, pcz, 5);
-        // Optional: could unload far chunks here to cap memory
+
+        // Assurez-vous que les chunks autour du joueur sont chargés
+        ensureChunksAround(pcx, pcz, renderRadius);
+
+        // Décharge les chunks éloignés et sauvegarde les chunks modifiés
+        unloadDistantChunks(pcx, pcz);
     }
 
     private void ensureChunksAround(int centerCx, int centerCz, int radius) {
@@ -215,27 +220,97 @@ public class World {
                 int cx = centerCx + dx;
                 int cz = centerCz + dz;
                 long k = key(cx, cz);
-                Chunk chunk = chunks.computeIfAbsent(k, kk -> createChunk(cx, cz));
-                // If this chunk has not been generated yet (version==0), schedule generation
-                if (chunk.getVersion() == 0) {
-                    scheduleGeneration(k, chunk, cx, cz);
+
+                // Si le chunk n'est pas chargé en mémoire
+                if (!chunks.containsKey(k)) {
+                    // Vérifier s'il existe sur le disque avant de le créer
+                    Chunk loadedChunk = chunkIO.loadChunk(cx, cz);
+
+                    if (loadedChunk != null) {
+                        // Le chunk a été chargé depuis le disque
+                        chunks.put(k, loadedChunk);
+                    } else {
+                        // Le chunk n'existe pas, on le crée et on programme sa génération
+                        Chunk chunk = createChunk(cx, cz);
+                        chunks.put(k, chunk);
+
+                        // Programmer la génération si nécessaire
+                        if (chunk.getVersion() == 0) {
+                            scheduleGeneration(k, chunk, cx, cz);
+                        }
+                    }
+                } else {
+                    // Le chunk est déjà chargé, vérifier s'il faut générer
+                    Chunk chunk = chunks.get(k);
+                    if (chunk.getVersion() == 0) {
+                        scheduleGeneration(k, chunk, cx, cz);
+                    }
                 }
             }
         }
     }
 
-    public Collection<Chunk> getChunks() { return chunks.values(); }
+    /**
+     * Décharge les chunks qui sont trop éloignés du joueur et sauvegarde les chunks modifiés
+     */
+    private void unloadDistantChunks(int playerCx, int playerCz) {
+        // Rayon de déchargement = renderRadius + unloadBuffer
+        int unloadRadius = renderRadius + unloadBuffer;
+        int unloadRadiusSq = unloadRadius * unloadRadius;
 
-    public Chunk getChunk(int cx, int cz) { return chunks.get(key(cx, cz)); }
+        // Créer une liste des chunks à décharger pour éviter ConcurrentModificationException
+        List<Long> chunksToUnload = new ArrayList<>();
 
-    public Chunk getChunkAt(int x, int z) {
-        int cx = Math.floorDiv(x, Chunk.CHUNK_X);
-        int cz = Math.floorDiv(z, Chunk.CHUNK_Z);
-        return getChunk(cx, cz);
+        // Parcourir tous les chunks chargés
+        for (Map.Entry<Long, Chunk> entry : chunks.entrySet()) {
+            long key = entry.getKey();
+            Chunk chunk = entry.getValue();
+
+            // Extraire les coordonnées du chunk
+            int cx = chunk.getOriginX() / Chunk.CHUNK_X;
+            int cz = chunk.getOriginZ() / Chunk.CHUNK_Z;
+
+            // Calculer la distance au carré entre le chunk et le joueur
+            int dx = cx - playerCx;
+            int dz = cz - playerCz;
+            int distSq = dx*dx + dz*dz;
+
+            // Si le chunk est trop loin du joueur
+            if (distSq > unloadRadiusSq) {
+                // S'il est modifié, le sauvegarder d'abord
+                if (chunk.isDirty()) {
+                    saveChunk(chunk);
+                }
+
+                // Ajouter à la liste des chunks à décharger
+                chunksToUnload.add(key);
+            }
+        }
+
+        // Décharger les chunks
+        for (Long key : chunksToUnload) {
+            chunks.remove(key);
+        }
+    }
+
+    /**
+     * Sauvegarde un chunk sur le disque
+     */
+    private void saveChunk(Chunk chunk) {
+        chunkIO.saveChunk(chunk);
+        chunk.markClean();
     }
 
     // Gracefully shutdown background generation threads
     public void shutdown() {
+        // Sauvegarder tous les chunks modifiés avant de fermer
+        for (Chunk chunk : chunks.values()) {
+            if (chunk.isDirty()) {
+                saveChunk(chunk);
+            }
+        }
+
+        // Fermer le thread pool
         chunkExecutor.shutdown();
         try {
             if (!chunkExecutor.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS)) {
@@ -283,5 +358,16 @@ public class World {
                 if (neighbor != null) neighbor.bumpVersion();
             }
         }
+    }
+
+    private Chunk getChunkAt(int x, int z) {
+        int cx = Math.floorDiv(x, Chunk.CHUNK_X);
+        int cz = Math.floorDiv(z, Chunk.CHUNK_Z);
+        return getChunk(cx, cz);
+    }
+
+    private Chunk getChunk(int cx, int cz) {
+        long k = key(cx, cz);
+        return chunks.computeIfAbsent(k, k1 -> {throw new RuntimeException("Chunk not found: " + cx + ", " + cz);});
     }
 }

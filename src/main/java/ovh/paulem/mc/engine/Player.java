@@ -209,7 +209,7 @@ public class Player {
 
     private static boolean collidedAbove(World world, Vector3f position) {
         float x = position.x;
-        float y = position.y + HEIGHT;
+        float y = position.y;
         float z = position.z;
         return aabbIntersectsSolid(world, x, y, z);
     }

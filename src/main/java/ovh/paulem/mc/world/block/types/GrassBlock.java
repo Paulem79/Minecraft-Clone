@@ -2,31 +2,13 @@ package ovh.paulem.mc.world.block.types;
 
 import ovh.paulem.mc.engine.renderer.texture.OverlayTexture;
 import ovh.paulem.mc.engine.renderer.texture.Texture;
-import ovh.paulem.mc.engine.renderer.texture.TintTexture;
-import ovh.paulem.mc.world.block.Face;
+import ovh.paulem.mc.engine.renderer.texture.TintType;
 
-import java.util.List;
 import java.util.Map;
 
 public class GrassBlock extends TintTopFaceBlock {
-    public GrassBlock(String name, int id, TintTexture.TintType tintType) {
+    public GrassBlock(String name, int id, TintType tintType) {
         super(name, id, tintType);
-    }
-
-    @Override
-    public Map<Face, List<Texture>> getTextures() {
-        Map<Face, List<Texture>> textures = super.getTextures();
-
-        for (Face face : Face.values()) {
-            if (face == Face.POS_Y || face == Face.NEG_Y) continue;
-
-            List<Texture> sideTextures = textures.get(face);
-            sideTextures.add(new OverlayTexture(this, "/textures/" + name + "_side.png",
-                    "/textures/" + name + "_side_overlay.png"));
-            textures.put(face, sideTextures);
-        }
-
-        return textures;
     }
 
     @Override

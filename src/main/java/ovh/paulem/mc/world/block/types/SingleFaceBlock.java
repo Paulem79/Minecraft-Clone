@@ -18,17 +18,6 @@ public class SingleFaceBlock extends Block {
     }
 
     @Override
-    public Map<Face, List<Texture>> getTextures() {
-        Map<Face, List<Texture>> textures = new HashMap<>();
-
-        for (Face face : Face.values()) {
-            textures.put(face, new ArrayList<>(List.of(new Texture(this, getFaceTextureName(face)))));
-        }
-
-        return textures;
-    }
-
-    @Override
     public void serveTextures(Map<String, Texture> textureCache) {
         new Texture(this, getFaceTextureName(Face.POS_X)).serve(textureCache);
     }

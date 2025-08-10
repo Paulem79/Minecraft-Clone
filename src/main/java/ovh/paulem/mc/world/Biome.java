@@ -1,5 +1,8 @@
 package ovh.paulem.mc.world;
 
+import org.joml.Vector3f;
+import ovh.paulem.mc.engine.renderer.texture.TintType;
+
 /**
  * Simple biome definition. Defines colors for grass and foliage (leaves).
  */
@@ -30,6 +33,13 @@ public enum Biome {
     public float foliageR() { return foliageR; }
     public float foliageG() { return foliageG; }
     public float foliageB() { return foliageB; }
+
+    public Vector3f getByTint(TintType tintType) {
+        return switch (tintType) {
+            case GRASS -> new Vector3f(grassR, grassG, grassB);
+            case FOLIAGE -> new Vector3f(foliageR, foliageG, foliageB);
+        };
+    }
 
     public static float byteToFloat(short bytes) {
         return ((bytes & 0xFF) / 255.0f);

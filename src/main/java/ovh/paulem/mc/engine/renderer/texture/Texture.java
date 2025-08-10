@@ -100,6 +100,10 @@ public class Texture {
         textureCache.put(resourcePath, this);
     }
 
+    public Texture asPlain() {
+        return new Texture(baseBlock, resourcePath);
+    }
+
     @Override
     public String toString() {
         return "Texture{" +

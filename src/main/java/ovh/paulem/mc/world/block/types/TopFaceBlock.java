@@ -12,17 +12,6 @@ public class TopFaceBlock extends Block {
     }
 
     @Override
-    public Map<Face, List<Texture>> getTextures() {
-        Map<Face, List<Texture>> textures = new HashMap<>();
-
-        for (Face face : Face.values()) {
-            textures.put(face, new ArrayList<>(List.of(new Texture(this, getFaceTextureName(face)))));
-        }
-
-        return textures;
-    }
-
-    @Override
     public String getFaceTextureName(Face face) {
         // POS_Y is the top (+Y)
         if (face == Face.POS_Y) {

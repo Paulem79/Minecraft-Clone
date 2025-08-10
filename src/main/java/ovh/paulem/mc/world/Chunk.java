@@ -14,6 +14,9 @@ public class Chunk {
     // Version increments when the chunk's block data is updated (e.g., generation complete)
     private volatile int version = 0;
 
+    // Indique si le chunk a été modifié depuis son dernier chargement/sauvegarde
+    private volatile boolean dirty = false;
+
     public Chunk(int originX, int originZ) {
         this.originX = originX;
         this.originZ = originZ;
@@ -34,5 +37,23 @@ public class Chunk {
     public void setBlock(int x, int y, int z, Block block) { setBlockId(x, y, z, block.getId()); }
 
     public int getVersion() { return version; }
-    public void bumpVersion() { version++; }
+
+    public void bumpVersion() {
+        version++;
+        dirty = true;
+    }
+
+    // Utilisé uniquement lors du chargement pour restaurer la version sans marquer le chunk comme modifié
+    public void setVersion(int version) {
+        this.version = version;
+        this.dirty = false;
+    }
+
+    public boolean isDirty() {
+        return dirty;
+    }
+
+    public void markClean() {
+        dirty = false;
+    }
 }

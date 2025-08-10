@@ -1,6 +1,5 @@
 package ovh.paulem.mc.engine.renderer;
 
-import org.joml.Vector2f;
 import org.joml.Vector3f;
 import ovh.paulem.mc.engine.Hotbar;
 import ovh.paulem.mc.engine.Window;
@@ -8,15 +7,9 @@ import ovh.paulem.mc.engine.renderer.texture.OverlayTexture;
 import ovh.paulem.mc.engine.renderer.texture.Texture;
 import ovh.paulem.mc.engine.renderer.texture.TintTexture;
 import ovh.paulem.mc.world.Biome;
-import ovh.paulem.mc.world.block.Blocks;
-import ovh.paulem.mc.world.block.types.Block;
 import ovh.paulem.mc.world.block.Face;
+import ovh.paulem.mc.world.block.types.Block;
 import ovh.paulem.mc.world.block.types.Tintable;
-
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 import static org.lwjgl.opengl.GL11.*;
 
@@ -24,19 +17,15 @@ import static org.lwjgl.opengl.GL11.*;
  * Classe responsable du rendu de la barre de sélection des blocs (Hotbar)
  */
 public record HotbarRenderer(Hotbar hotbar, Shader shader) {
-    private static final float HOTBAR_RATIO = 0.8f/0.25f;
+    private static final float HOTBAR_RATIO = 0.83f/0.25f;
     private static final float HOTBAR_HEIGHT = 0.2f;  // Hauteur de la barre en % de l'écran
     private static final float HOTBAR_WIDTH = HOTBAR_RATIO*HOTBAR_HEIGHT;
     private static final float SLOT_PADDING = 0.005f;  // Espace entre les slots en % de l'écran
-
-    private static final Map<String, Texture> textureCache = new HashMap<>();
 
     /**
      * Dessine la barre de sélection à l'écran
      */
     public void render(Window window) {
-        Blocks.blocks.forEach((integer, block) -> block.serveTextures(textureCache));
-
         // Sauvegarde complète de l'état d'OpenGL
         glPushAttrib(GL_ALL_ATTRIB_BITS);
 
@@ -111,24 +100,42 @@ public record HotbarRenderer(Hotbar hotbar, Shader shader) {
 
             // Dessiner le bloc dans l'emplacement s'il y en a un
             Block block = hotbar.getBlockAt(i);
-            if (block != null) { // Ne pas afficher l'air
-                // Mesures pour le positionnement du rendu 3D
-                float slotCenterX = x + slotWidth / 2.0f;
-                float slotCenterY = startY + HOTBAR_HEIGHT / 2.0f;
+            if (block != null) {
+                // Rendu 2D de la face latérale du bloc dans le slot
+                Texture texture = block.getFaceTexture(Face.POS_X);
 
-                // Convertir les coordonnées normalisées en coordonnées écran
-                float screenX = (slotCenterX + 1.0f) * window.getWidth() / 2.0f;
-                float screenY = (slotCenterY + 1.0f) * window.getHeight() / 2.0f;
-
-                // Taille du bloc en pixels (calculée par rapport à la taille du slot)
-                float blockSizePixels = Math.min(slotWidth, HOTBAR_HEIGHT) * Math.min(window.getWidth(), window.getHeight()) * 0.7f;
-
-                // Rendre le bloc en 3D au centre du slot
-                render3DBlock(window, block, screenX, screenY, blockSizePixels);
+                if(texture instanceof OverlayTexture overlayTexture) {
+                    applyTexture(texture.asPlain(), x, startY, slotWidth, block);
+                    applyTexture(overlayTexture.getOverlay(), x, startY, slotWidth, block);
+                } else applyTexture(texture, x, startY, slotWidth, block);
             }
         }
 
         renderCrosshair(window);
+    }
+
+    private static void applyTexture(Texture texture, float x, float startY, float slotWidth, Block block) {
+        if (texture != null) {
+            texture.bind(0);
+            float padding = 0.02f;
+            float tx = x + SLOT_PADDING + padding;
+            float ty = startY + SLOT_PADDING + padding;
+            float tw = slotWidth - 2 * (SLOT_PADDING + padding);
+            float th = HOTBAR_HEIGHT - 2 * (SLOT_PADDING + padding);
+
+            glEnable(GL_TEXTURE_2D);
+            if(block instanceof Tintable tintable && texture instanceof TintTexture) {
+                Vector3f colors = Biome.NORMAL.getByTint(tintable.getTintType());
+                glColor4f(colors.x, colors.y, colors.z, 1f);
+            } else glColor4f(1f, 1f, 1f, 1f);
+            glBegin(GL_QUADS);
+            glTexCoord2f(0, 0); glVertex2f(tx, ty);
+            glTexCoord2f(1, 0); glVertex2f(tx + tw, ty);
+            glTexCoord2f(1, 1); glVertex2f(tx + tw, ty + th);
+            glTexCoord2f(0, 1); glVertex2f(tx, ty + th);
+            glEnd();
+            glDisable(GL_TEXTURE_2D);
+        }
     }
 
     private void renderCrosshair(Window window) {
@@ -152,117 +159,5 @@ public record HotbarRenderer(Hotbar hotbar, Shader shader) {
         glMatrixMode(GL_MODELVIEW);
         glPopMatrix();
         glPopAttrib();
-    }
-
-    /**
-     * Rend un bloc en 3D à une position spécifique de l'écran
-     */
-    private void render3DBlock(Window window, Block block, float screenX, float screenY, float blockSizePixels) {
-        // Sauvegarde des matrices et des états
-        glMatrixMode(GL_PROJECTION);
-        glPushMatrix();
-        glLoadIdentity();
-
-        // Définir une vue orthographique pour dessiner le bloc en 3D dans un espace 2D
-        // Le repère est centré sur le bloc, avec des coordonnées en pixels
-        int halfWidth = window.getWidth() / 2;
-        int halfHeight = window.getHeight() / 2;
-        glOrtho(
-            -halfWidth, halfWidth,
-            -halfHeight, halfHeight,
-            -1000, 1000
-        );
-
-
-        // Positionner le bloc (conversion des coordonnées d'écran en coordonnées de la vue orthographique)
-        glTranslatef(screenX - halfWidth, screenY - halfHeight, 0);
-
-        // Taille et rotation du bloc
-        float scale = blockSizePixels / 2.5f;
-        glScalef(scale, scale, scale);
-
-        // Rotation pour une vue isométrique typique de bloc
-        glRotatef(30.0f, 1.0f, 0.0f, 0.0f);
-        glRotatef(30f, 0.0f, 1.0f, 0.0f);
-
-        // Dessiner le bloc 3D
-        renderBlockCube(block);
-
-        glMatrixMode(GL_PROJECTION);
-        glPopMatrix();
-
-    }
-
-    /**
-     * Dessine un bloc 3D avec les textures appropriées pour chaque face
-     */
-    private void renderBlockCube(Block block) {
-        // Définir les couleurs du biome normal
-        Biome biome = Biome.NORMAL;
-        float[] grassColor = {biome.grassR(), biome.grassG(), biome.grassB()};
-        float[] foliageColor = {biome.foliageR(), biome.foliageG(), biome.foliageB()};
-
-
-        for (Face face : Face.values()) {
-            List<Texture> textures = block.getTextures().get(face);
-
-            for (Texture texture : textures) {
-                if (texture != null) {
-                    doForTexture(face, texture, grassColor, foliageColor);
-                }
-            }
-        }
-
-    }
-
-    private void doForTexture(Face face, Texture texture, float[] grassColor, float[] foliageColor) {
-        // Configurer le rendu 3D
-        glEnable(GL_DEPTH_TEST);
-        glClear(GL_DEPTH_BUFFER_BIT); // Effacer seulement le buffer de profondeur
-
-        glEnable(GL_TEXTURE_2D);
-        texture.bind(0);
-        glBegin(GL_QUADS);
-        applyBiomeColor(texture, grassColor, foliageColor);
-        for (Map.Entry<Vector2f, Vector3f> entry : face.getFaceNormals().entrySet()) {
-            Vector2f uv = entry.getKey();
-            Vector3f normal = entry.getValue();
-
-            glTexCoord2f(uv.x, uv.y); glVertex3f(normal.x, normal.y, normal.z);
-        }
-        glEnd();
-        glDisable(GL_TEXTURE_2D);
-
-        // Restaurer l'état OpenGL
-        glDisable(GL_DEPTH_TEST);
-        glDisable(GL_CULL_FACE);
-    }
-
-    /**
-     * Applique les couleurs du biome en fonction du type de bloc
-     */
-    private void applyBiomeColor(Texture texture, float[] grassColor, float[] foliageColor) {
-        // Par défaut, couleur blanche (pas de modification)
-        float r = 1.0f, g = 1.0f, b = 1.0f;
-
-        // Détermine si la texture doit utiliser la couleur du biome
-        if (texture.getBaseBlock() instanceof Tintable tintable) {
-            if(tintable.getTintType() == TintTexture.TintType.GRASS) {
-                System.out.println(texture);
-            }
-            if (tintable.getTintType() == TintTexture.TintType.GRASS && (texture.getResourcePath().contains("top") || texture.getResourcePath().contains("overlay"))) {
-                // Appliquer la couleur de l'herbe
-                r = grassColor[0];
-                g = grassColor[1];
-                b = grassColor[2];
-            } else if (tintable.getTintType() == TintTexture.TintType.FOLIAGE && texture instanceof TintTexture) {
-                // Appliquer la couleur du feuillage
-                r = foliageColor[0];
-                g = foliageColor[1];
-                b = foliageColor[2];
-            }
-        }
-
-        glColor3f(r, g, b);
     }
 }
