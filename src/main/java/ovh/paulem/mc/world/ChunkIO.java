@@ -1,6 +1,7 @@
 package ovh.paulem.mc.world;
 
 import ovh.paulem.mc.Dirs;
+import ovh.paulem.mc.math.ZLibUtils;
 
 import java.io.*;
 import java.nio.file.*;
@@ -21,7 +22,7 @@ public class ChunkIO {
         } catch (IOException e) {
             LOGGER.severe("Erreur lors de la création du répertoire de monde: " + e.getMessage());
         }
-        System.out.println("Folder created: " + worldDirectory);
+        LOGGER.fine("Folder created: " + worldDirectory);
     }
 
     /**
@@ -36,8 +37,8 @@ public class ChunkIO {
             Files.createDirectories(regionDir);
             Path chunkFile = getChunkFile(chunkX, chunkZ);
 
-            try (ObjectOutputStream oos = new ObjectOutputStream(
-                    new BufferedOutputStream(Files.newOutputStream(chunkFile)))) {
+            try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                 ObjectOutputStream oos = new ObjectOutputStream(new BufferedOutputStream(baos))) {
 
                 // Sauvegarde des métadonnées du chunk
                 oos.writeInt(chunk.getOriginX());
@@ -54,6 +55,8 @@ public class ChunkIO {
                 }
 
                 oos.flush();
+                byte[] compressed = ZLibUtils.compress(baos.toByteArray());
+                Files.write(chunkFile, compressed);
             }
         } catch (IOException e) {
             LOGGER.warning("Erreur lors de la sauvegarde du chunk (" + chunkX + "," + chunkZ + "): " + e.getMessage());
@@ -71,34 +74,40 @@ public class ChunkIO {
             return null;
         }
 
-        try (ObjectInputStream ois = new ObjectInputStream(
-                new BufferedInputStream(Files.newInputStream(chunkFile)))) {
+        try {
+            byte[] decompressed = ZLibUtils.decompress(Files.newInputStream(chunkFile).readAllBytes());
 
-            // Lecture des métadonnées
-            int originX = ois.readInt();
-            int originZ = ois.readInt();
-            int version = ois.readInt();
+            try (ObjectInputStream ois = new ObjectInputStream(
+                    new ByteArrayInputStream(decompressed))) {
 
-            // Création du chunk
-            Chunk chunk = new Chunk(originX, originZ);
+                // Lecture des métadonnées
+                int originX = ois.readInt();
+                int originZ = ois.readInt();
+                int version = ois.readInt();
 
-            // Chargement des blocs
-            for (int x = 0; x < Chunk.CHUNK_X; x++) {
-                for (int y = 0; y < Chunk.CHUNK_Y; y++) {
-                    for (int z = 0; z < Chunk.CHUNK_Z; z++) {
-                        int blockId = ois.readInt();
-                        chunk.setBlockId(x, y, z, blockId);
+                // Création du chunk
+                Chunk chunk = new Chunk(originX, originZ);
+
+                // Chargement des blocs
+                for (int x = 0; x < Chunk.CHUNK_X; x++) {
+                    for (int y = 0; y < Chunk.CHUNK_Y; y++) {
+                        for (int z = 0; z < Chunk.CHUNK_Z; z++) {
+                            int blockId = ois.readInt();
+                            chunk.setBlockId(x, y, z, blockId);
+                        }
                     }
                 }
+
+                // Restauration de la version sans déclencher de nouveau bump
+                chunk.setVersion(version);
+
+                return chunk;
+            } catch (IOException e) {
+                LOGGER.warning("Erreur lors du chargement du chunk (" + chunkX + "," + chunkZ + "): " + e.getMessage());
+                return null;
             }
-
-            // Restauration de la version sans déclencher de nouveau bump
-            chunk.setVersion(version);
-
-            return chunk;
         } catch (IOException e) {
-            LOGGER.warning("Erreur lors du chargement du chunk (" + chunkX + "," + chunkZ + "): " + e.getMessage());
-            return null;
+            throw new RuntimeException(e);
         }
     }
 
