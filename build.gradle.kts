@@ -141,6 +141,10 @@ tasks.jpackage {
     }
 }
 
+tasks.register<Delete>("deleteDist") {
+    delete("dist")
+}
+
 tasks.clean {
     dependsOn("deleteDist")
 }
