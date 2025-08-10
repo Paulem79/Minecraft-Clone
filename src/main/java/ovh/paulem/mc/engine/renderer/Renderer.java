@@ -345,54 +345,90 @@ public class Renderer {
                                 float x0 = w + 1; // face sits at +X side
                                 float y1 = v + height;
                                 float z1 = u + width;
+                                float[] lightLevels = new float[]{
+                                        safeGetLightLevel(chunk, (int)x0-1, (int)v, (int)z1-1),
+                                        safeGetLightLevel(chunk, (int)x0-1, (int)v, (int)u),
+                                        safeGetLightLevel(chunk, (int)x0-1, (int)y1-1, (int)u),
+                                        safeGetLightLevel(chunk, (int)x0-1, (int)y1-1, (int)z1-1)
+                                };
                                 addQuad(acc.verts, acc.inds,
                                         new float[]{x0, (float) v, z1}, new float[]{x0, (float) v, (float) u}, new float[]{x0, y1, (float) u}, new float[]{x0, y1, z1},
-                                        normal, acc.indexOffset);
+                                        normal, acc.indexOffset, lightLevels);
                                 acc.indexOffset += 4;
                                 break; }
                             case 1: { // -X at x=w, u=z, v=y
                                 // face sits at -X side
                                 float y1 = v + height;
                                 float z1 = u + width;
+                                float[] lightLevels = new float[]{
+                                        safeGetLightLevel(chunk, (int)w, (int)v, (int)u),
+                                        safeGetLightLevel(chunk, (int)w, (int)v, (int)z1),
+                                        safeGetLightLevel(chunk, (int)w, (int)y1-1, (int)z1),
+                                        safeGetLightLevel(chunk, (int)w, (int)y1-1, (int)u)
+                                };
                                 addQuad(acc.verts, acc.inds,
                                         new float[]{(float) w, (float) v, (float) u}, new float[]{(float) w, (float) v, z1}, new float[]{(float) w, y1, z1}, new float[]{(float) w, y1, (float) u},
-                                        normal, acc.indexOffset);
+                                        normal, acc.indexOffset, lightLevels);
                                 acc.indexOffset += 4;
                                 break; }
                             case 2: { // +Y at y=w, u=x, v=z
                                 float y0 = w + 1; // top face at +Y side
                                 float x1 = u + width;
                                 float z1 = v + height;
+                                float[] lightLevels = new float[]{
+                                        safeGetLightLevel(chunk, (int)u, (int)w, (int)v),
+                                        safeGetLightLevel(chunk, (int)u, (int)w, (int)z1),
+                                        safeGetLightLevel(chunk, (int)x1, (int)w, (int)z1),
+                                        safeGetLightLevel(chunk, (int)x1, (int)w, (int)v)
+                                };
                                 addQuad(acc.verts, acc.inds,
                                         new float[]{(float) u, y0, (float) v}, new float[]{(float) u, y0, z1}, new float[]{x1, y0, z1}, new float[]{x1, y0, (float) v},
-                                        normal, acc.indexOffset);
+                                        normal, acc.indexOffset, lightLevels);
                                 acc.indexOffset += 4;
                                 break; }
                             case 3: { // -Y at y=w, u=x, v=z
                                 // bottom face at -Y side
                                 float x1 = u + width;
                                 float z1 = v + height;
+                                float[] lightLevels = new float[]{
+                                        safeGetLightLevel(chunk, (int)u, (int)w, (int)v),
+                                        safeGetLightLevel(chunk, (int)x1, (int)w, (int)v),
+                                        safeGetLightLevel(chunk, (int)x1, (int)w, (int)z1),
+                                        safeGetLightLevel(chunk, (int)u, (int)w, (int)z1)
+                                };
                                 addQuad(acc.verts, acc.inds,
                                         new float[]{(float) u, (float) w, (float) v}, new float[]{x1, (float) w, (float) v}, new float[]{x1, (float) w, z1}, new float[]{(float) u, (float) w, z1},
-                                        normal, acc.indexOffset);
+                                        normal, acc.indexOffset, lightLevels);
                                 acc.indexOffset += 4;
                                 break; }
                             case 4: { // +Z at z=w, u=x, v=y
                                 float z0 = w + 1; // front face at +Z side
                                 float x1 = u + width;
                                 float y1 = v + height;
+                                float[] lightLevels = new float[]{
+                                        safeGetLightLevel(chunk, (int)u, (int)v, (int)w),
+                                        safeGetLightLevel(chunk, (int)x1, (int)v, (int)w),
+                                        safeGetLightLevel(chunk, (int)x1, (int)y1, (int)w),
+                                        safeGetLightLevel(chunk, (int)u, (int)y1, (int)w)
+                                };
                                 addQuad(acc.verts, acc.inds,
                                         new float[]{(float) u, (float) v, z0}, new float[]{x1, (float) v, z0}, new float[]{x1, y1, z0}, new float[]{(float) u, y1, z0},
-                                        normal, acc.indexOffset);
+                                        normal, acc.indexOffset, lightLevels);
                                 acc.indexOffset += 4;
                                 break; }
                             default: { // 5: -Z at z=w, u=x, v=y
                                 // back face at -Z side
                                 float x1 = u + width;
                                 float y1 = v + height;
+                                float[] lightLevels = new float[]{
+                                        safeGetLightLevel(chunk, (int)x1, (int)v, (int)w),
+                                        safeGetLightLevel(chunk, (int)u, (int)v, (int)w),
+                                        safeGetLightLevel(chunk, (int)u, (int)y1, (int)w),
+                                        safeGetLightLevel(chunk, (int)x1, (int)y1, (int)w)
+                                };
                                 addQuad(acc.verts, acc.inds,
                                         new float[]{x1, (float) v, (float) w}, new float[]{(float) u, (float) v, (float) w}, new float[]{(float) u, y1, (float) w}, new float[]{x1, y1, (float) w},
-                                        normal, acc.indexOffset);
+                                        normal, acc.indexOffset, lightLevels);
                                 acc.indexOffset += 4;
                                 break; }
                         }
@@ -437,7 +473,46 @@ public class Renderer {
                         if (neighborSolid) continue;
                         String texName = block.getFaceTextureName(f);
                         Acc acc = accs.computeIfAbsent(texName, k -> new Acc());
-                        addFace(acc.verts, acc.inds, x, y, z, f, NORMALS[f], acc.indexOffset);
+                        // Calcul des niveaux de lumière pour chaque coin de la face
+                        float[] lightLevels = switch (f) {
+                            case 0 -> new float[]{
+                                safeGetLightLevel(chunk, x + 1, y, z + 1),
+                                safeGetLightLevel(chunk, x + 1, y, z),
+                                safeGetLightLevel(chunk, x + 1, y + 1, z),
+                                safeGetLightLevel(chunk, x + 1, y + 1, z + 1)
+                            };
+                            case 1 -> new float[]{
+                                safeGetLightLevel(chunk, x, y, z),
+                                safeGetLightLevel(chunk, x, y, z + 1),
+                                safeGetLightLevel(chunk, x, y + 1, z + 1),
+                                safeGetLightLevel(chunk, x, y + 1, z)
+                            };
+                            case 2 -> new float[]{
+                                safeGetLightLevel(chunk, x, y + 1, z),
+                                safeGetLightLevel(chunk, x, y + 1, z + 1),
+                                safeGetLightLevel(chunk, x + 1, y + 1, z + 1),
+                                safeGetLightLevel(chunk, x + 1, y + 1, z)
+                            };
+                            case 3 -> new float[]{
+                                safeGetLightLevel(chunk, x, y, z),
+                                safeGetLightLevel(chunk, x + 1, y, z),
+                                safeGetLightLevel(chunk, x + 1, y, z + 1),
+                                safeGetLightLevel(chunk, x, y, z + 1)
+                            };
+                            case 4 -> new float[]{
+                                safeGetLightLevel(chunk, x, y, z + 1),
+                                safeGetLightLevel(chunk, x + 1, y, z + 1),
+                                safeGetLightLevel(chunk, x + 1, y + 1, z + 1),
+                                safeGetLightLevel(chunk, x, y + 1, z + 1)
+                            };
+                            default -> new float[]{
+                                safeGetLightLevel(chunk, x + 1, y, z),
+                                safeGetLightLevel(chunk, x, y, z),
+                                safeGetLightLevel(chunk, x, y + 1, z),
+                                safeGetLightLevel(chunk, x + 1, y + 1, z)
+                            };
+                        };
+                        addFace(acc.verts, acc.inds, x, y, z, f, NORMALS[f], acc.indexOffset, lightLevels);
                         acc.indexOffset += 4;
                     }
                 }
@@ -469,8 +544,8 @@ public class Renderer {
     }
 
     // --- Ajout des méthodes utilitaires manquantes ---
-    // Ajoute un quad à la liste des vertex et indices
-    private static void addQuad(List<Float> verts, List<Integer> inds, float[] c0, float[] c1, float[] c2, float[] c3, Vector3f normal, int indexOffset) {
+    // Ajoute un quad à la liste des vertex et indices, avec la lumière par sommet
+    private static void addQuad(List<Float> verts, List<Integer> inds, float[] c0, float[] c1, float[] c2, float[] c3, Vector3f normal, int indexOffset, float[] lightLevels) {
         float[][] uvs = new float[][]{{0,0},{1,0},{1,1},{0,1}};
         float[][] corners = new float[][]{c0, c1, c2, c3};
         for (int i = 0; i < 4; i++) {
@@ -478,13 +553,14 @@ public class Renderer {
             verts.add(c[0]); verts.add(c[1]); verts.add(c[2]);
             verts.add(uvs[i][0]); verts.add(uvs[i][1]);
             verts.add(normal.x); verts.add(normal.y); verts.add(normal.z);
+            verts.add(lightLevels[i]); // Ajout du niveau de lumière
         }
         inds.add(indexOffset); inds.add(indexOffset + 1); inds.add(indexOffset + 2);
         inds.add(indexOffset + 2); inds.add(indexOffset + 3); inds.add(indexOffset);
     }
 
     // Ajoute une face de cube à la liste
-    private static void addFace(List<Float> verts, List<Integer> inds, int x, int y, int z, int f, Vector3f normal, int indexOffset) {
+    private static void addFace(List<Float> verts, List<Integer> inds, int x, int y, int z, int f, Vector3f normal, int indexOffset, float[] lightLevels) {
         float[][] corners = switch (f) {
             case 0 ->
                     new float[][]{{(float) x + 1, (float) y, (float) z + 1}, {(float) x + 1, (float) y, (float) z}, {(float) x + 1, (float) y + 1, (float) z}, {(float) x + 1, (float) y + 1, (float) z + 1}};
@@ -496,6 +572,21 @@ public class Renderer {
                     new float[][]{{(float) x, (float) y, (float) z + 1}, {(float) x + 1, (float) y, (float) z + 1}, {(float) x + 1, (float) y + 1, (float) z + 1}, {(float) x, (float) y + 1, (float) z + 1}};
             default -> new float[][]{{(float) x + 1, (float) y, (float) z}, {(float) x, (float) y, (float) z}, {(float) x, (float) y + 1, (float) z}, {(float) x + 1, (float) y + 1, (float) z}};
         };
-        addQuad(verts, inds, corners[0], corners[1], corners[2], corners[3], normal, indexOffset);
+        addQuad(verts, inds, corners[0], corners[1], corners[2], corners[3], normal, indexOffset, lightLevels);
+    }
+
+    // Utilitaire pour éviter les ArrayIndexOutOfBounds lors de l'accès à la lumière
+    private static float safeGetLightLevel(Chunk chunk, int x, int y, int z) {
+        if (y >= Chunk.CHUNK_Y) return 1.0f; // ciel
+        if (x == Chunk.CHUNK_X) {
+            return safeGetLightLevel(chunk, x-1, y, z);
+        }
+        if (z == Chunk.CHUNK_Z) {
+            return safeGetLightLevel(chunk, x, y, z-1);
+        }
+        if (x < 0 || x >= Chunk.CHUNK_X || y < 0 || z < 0 || z >= Chunk.CHUNK_Z) {
+            return 0.0f; // souterrain ou hors chunk
+        }
+        return chunk.getLightLevel(x, y, z) / 15.0f;
     }
 }

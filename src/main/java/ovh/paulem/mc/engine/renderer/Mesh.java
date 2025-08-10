@@ -40,8 +40,8 @@ public class Mesh {
         MemoryUtil.memFree(indexBuffer);
 
         // Layout des attributs :
-        // position (3 floats), texCoord (2 floats), normal (3 floats)
-        int stride = (3 + 2 + 3) * Float.BYTES;
+        // position (3 floats), texCoord (2 floats), normal (3 floats), light (1 float)
+        int stride = (3 + 2 + 3 + 1) * Float.BYTES;
 
         // Attribut 0 : positions
         glVertexAttribPointer(0, 3, GL_FLOAT, false, stride, 0);
@@ -54,6 +54,10 @@ public class Mesh {
         // Attribut 2 : normales
         glVertexAttribPointer(2, 3, GL_FLOAT, false, stride, (3 + 2) * Float.BYTES);
         glEnableVertexAttribArray(2);
+
+        // Attribut 3 : lumière
+        glVertexAttribPointer(3, 1, GL_FLOAT, false, stride, (3 + 2 + 3) * Float.BYTES);
+        glEnableVertexAttribArray(3);
 
         // Unbind VAO
         glBindBuffer(GL_ARRAY_BUFFER, 0);

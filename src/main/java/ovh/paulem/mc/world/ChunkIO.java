@@ -13,8 +13,10 @@ import java.util.logging.Logger;
 public class ChunkIO {
     private static final Logger LOGGER = Logger.getLogger(ChunkIO.class.getName());
     private final Path worldDirectory;
+    private final World world;
 
-    public ChunkIO(String worldName) {
+    public ChunkIO(World world, String worldName) {
+        this.world = world;
         // Créer un répertoire pour les sauvegardes de ce monde
         this.worldDirectory = Dirs.WORLD.resolve(worldName);
         try {
@@ -86,7 +88,7 @@ public class ChunkIO {
                 int version = ois.readInt();
 
                 // Création du chunk
-                Chunk chunk = new Chunk(originX, originZ);
+                Chunk chunk = new Chunk(world, originX, originZ);
 
                 // Chargement des blocs
                 for (int x = 0; x < Chunk.CHUNK_X; x++) {

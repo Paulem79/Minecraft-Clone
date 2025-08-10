@@ -8,6 +8,7 @@ public class Chunk {
     public static final int CHUNK_Y = 256;
     public static final int CHUNK_Z = 16;
 
+    private final World world;
     private final int originX;
     private final int originZ;
     private final int[][][] blocks = new int[CHUNK_X][CHUNK_Y][CHUNK_Z];
@@ -17,7 +18,10 @@ public class Chunk {
     // Indique si le chunk a été modifié depuis son dernier chargement/sauvegarde
     private volatile boolean dirty = false;
 
-    public Chunk(int originX, int originZ) {
+    private final byte[][][] lightLevels = new byte[CHUNK_X][CHUNK_Y][CHUNK_Z];
+
+    public Chunk(World world, int originX, int originZ) {
+        this.world = world;
         this.originX = originX;
         this.originZ = originZ;
     }
@@ -47,6 +51,8 @@ public class Chunk {
     public void setVersion(int version) {
         this.version = version;
         this.dirty = false;
+
+        world.getLightEngine().propagateSkyLight(this);
     }
 
     public boolean isDirty() {
@@ -55,5 +61,13 @@ public class Chunk {
 
     public void markClean() {
         dirty = false;
+    }
+
+    public byte getLightLevel(int x, int y, int z) {
+        return lightLevels[x][y][z];
+    }
+
+    public void setLightLevel(int x, int y, int z, byte level) {
+        lightLevels[x][y][z] = level;
     }
 }

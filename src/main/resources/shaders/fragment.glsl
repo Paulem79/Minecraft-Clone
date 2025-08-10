@@ -1,6 +1,7 @@
 #version 330 core
 
 in vec2 TexCoord;
+in float LightLevel;
 
 out vec4 FragColor;
 
@@ -33,6 +34,9 @@ void main()
         // Tint foliage (leaves) by biome foliage color
         color *= biomeFoliageColor;
     }
+
+    // Appliquer la lumière APRÈS tous les blends/tints
+    color *= LightLevel * 0.8 + 0.2;
 
     FragColor = vec4(color, base.a);
 }

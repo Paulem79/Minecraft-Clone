@@ -34,11 +34,17 @@ public class World {
     // Rayon supplémentaire pour ne pas décharger immédiatement les chunks
     private final int unloadBuffer = 2;
 
+    private final LightEngine lightEngine = new LightEngine();
+
+    public LightEngine getLightEngine() {
+        return lightEngine;
+    }
+
     private static long key(int cx, int cz) { return (((long)cx) << 32) ^ (cz & 0xffffffffL); }
 
     public World() {
         // Nom du monde - peut être paramétrable dans le futur
-        chunkIO = new ChunkIO("default");
+        chunkIO = new ChunkIO(this, "default");
 
         // schedule initial chunks around origin asynchronously
         ensureChunksAround(0, 0, 2);
@@ -47,7 +53,7 @@ public class World {
     private Chunk createChunk(int cx, int cz) {
         int originX = cx * Chunk.CHUNK_X;
         int originZ = cz * Chunk.CHUNK_Z;
-        return new Chunk(originX, originZ);
+        return new Chunk(this, originX, originZ);
     }
 
     // Schedules async generation of the specified chunk if not already generating
@@ -360,13 +366,13 @@ public class World {
         }
     }
 
-    private Chunk getChunkAt(int x, int z) {
+    public Chunk getChunkAt(int x, int z) {
         int cx = Math.floorDiv(x, Chunk.CHUNK_X);
         int cz = Math.floorDiv(z, Chunk.CHUNK_Z);
         return getChunk(cx, cz);
     }
 
-    private Chunk getChunk(int cx, int cz) {
+    public Chunk getChunk(int cx, int cz) {
         long k = key(cx, cz);
         return chunks.computeIfAbsent(k, k1 -> {throw new RuntimeException("Chunk not found: " + cx + ", " + cz);});
     }
