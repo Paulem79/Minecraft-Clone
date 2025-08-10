@@ -37,6 +37,12 @@ application {
     mainClass.set(project.group.toString() + ".Main")
 }
 
+tasks.jar {
+    manifest {
+        attributes(mapOf("Main-Class" to application.mainClass.get()))
+    }
+}
+
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(17))
