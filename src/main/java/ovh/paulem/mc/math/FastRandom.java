@@ -493,12 +493,6 @@ public class FastRandom implements RandomGenerator, Serializable {
                 }
             }
 
-    		/* // Old version, uses time linear in alpha
-			   double y = -Math.log (nextUniform ());
-			   while (nextUniform () > Math.pow (y * Math.exp (1 - y), alpha - 1))
-			   y = -Math.log (nextUniform ());
-			   gamma = alpha * y;
-    		 */
         }
         return beta * gamma + lambda;
     }

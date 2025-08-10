@@ -1,6 +1,11 @@
-package ovh.paulem.mc.world.block;
+package ovh.paulem.mc.world.block.types;
 
 import ovh.paulem.mc.engine.renderer.texture.Texture;
+import ovh.paulem.mc.engine.renderer.texture.Textures;
+import ovh.paulem.mc.world.block.Face;
+
+import java.util.List;
+import java.util.Map;
 
 import static ovh.paulem.mc.world.block.Blocks.AIR;
 
@@ -25,34 +30,43 @@ public abstract class Block {
         return name;
     }
 
-    // Default block texture (used for all faces if not overridden)
-    public Texture getTexture() {
-        return new Texture("/textures/" + name + ".png");
-    }
+    public abstract Map<Face, List<Texture>> getTextures();
 
-    // New: enum-based per-face texture name
     public String getFaceTextureName(Face face) {
         return "/textures/" + name + ".png";
     }
 
-    // Backward-compatible: Per-face texture name by index; indices: 0:+X,1:-X,2:+Y(top),3:-Y(bottom),4:+Z,5:-Z
     public String getFaceTextureName(int face) {
         return getFaceTextureName(Face.fromIndex(face));
     }
 
-    // Convenience: create a texture instance for the specified face (enum)
-    public Texture getFaceTexture(Face face) {
-        return new Texture(getFaceTextureName(face));
-    }
-
-    // Backward-compatible: convenience by index
     public Texture getFaceTexture(int face) {
         return getFaceTexture(Face.fromIndex(face));
     }
+
+    public Texture getFaceTexture(Face face) {
+        String textureName = getFaceTextureName(face);
+        Texture texture = Textures.textureCache.get(textureName);
+
+        if(texture == null) throw new RuntimeException("Texture not found: " + textureName);
+
+        return texture;
+    }
+
+    public abstract void serveTextures(Map<String, Texture> textureCache);
 
     public boolean isTransparent() {
         return transparent;
     }
 
     public boolean isBlock() { return id != AIR.getId(); }
+
+    @Override
+    public String toString() {
+        return "Block{" +
+                "name='" + name + '\'' +
+                ", id=" + id +
+                ", transparent=" + transparent +
+                '}';
+    }
 }

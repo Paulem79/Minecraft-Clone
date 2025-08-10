@@ -80,4 +80,8 @@ public class Shader {
     public void setUniform3f(String name, float x, float y, float z) {
         glUniform3f(glGetUniformLocation(programId, name), x, y, z);
     }
+
+    public void detach() {
+        glUseProgram(0);
+    }
 }

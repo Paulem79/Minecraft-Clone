@@ -23,7 +23,7 @@ public class Player {
     public static class State {
         public final Vector3f position;
         public final Vector3f velocity;
-        public boolean onGround;
+        public final boolean onGround;
         public State(Vector3f position, Vector3f velocity, boolean onGround) {
             this.position = new Vector3f(position);
             this.velocity = new Vector3f(velocity);
@@ -209,7 +209,7 @@ public class Player {
 
     private static boolean collidedAbove(World world, Vector3f position) {
         float x = position.x;
-        float y = position.y + HEIGHT + 0.05f;
+        float y = position.y + HEIGHT;
         float z = position.z;
         return aabbIntersectsSolid(world, x, y, z);
     }
@@ -217,13 +217,12 @@ public class Player {
     private static boolean aabbIntersectsSolid(World world, float x, float y, float z) {
         float minX = x - WIDTH / 2f;
         float maxX = x + WIDTH / 2f;
-        float minY = y;
         float maxY = y + HEIGHT;
         float minZ = z - DEPTH / 2f;
         float maxZ = z + DEPTH / 2f;
         int startX = (int)Math.floor(minX);
         int endX   = (int)Math.floor(maxX);
-        int startY = (int)Math.floor(minY);
+        int startY = (int)Math.floor(y);
         int endY   = (int)Math.floor(maxY);
         int startZ = (int)Math.floor(minZ);
         int endZ   = (int)Math.floor(maxZ);

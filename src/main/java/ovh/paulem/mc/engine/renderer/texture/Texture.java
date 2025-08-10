@@ -1,22 +1,26 @@
 package ovh.paulem.mc.engine.renderer.texture;
 
 import org.lwjgl.stb.STBImage;
+import ovh.paulem.mc.world.block.types.Block;
 
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
+import java.util.Map;
 
 import static org.lwjgl.opengl.GL46.*;
 import static org.lwjgl.system.MemoryStack.stackPush;
 
 public class Texture {
-    private final int id;
-    private final int width;
-    private final int height;
-    private final String resourcePath;
+    protected final int id;
+    protected final int width;
+    protected final int height;
+    protected final Block baseBlock;
+    protected final String resourcePath;
 
-    public Texture(String resourcePath) {
+    public Texture(Block baseBlock, String resourcePath) {
+        this.baseBlock = baseBlock;
         this.resourcePath = resourcePath;
 
         URL url = getClass().getResource(resourcePath);
@@ -86,5 +90,23 @@ public class Texture {
     public int getHeight() { return height; }
     public String getResourcePath() {
         return resourcePath;
+    }
+
+    public Block getBaseBlock() {
+        return baseBlock;
+    }
+
+    public void serve(Map<String, Texture> textureCache) {
+        textureCache.put(resourcePath, this);
+    }
+
+    @Override
+    public String toString() {
+        return "Texture{" +
+                "id=" + id +
+                ", width=" + width +
+                ", height=" + height +
+                ", resourcePath='" + resourcePath + '\'' +
+                '}';
     }
 }

@@ -1,6 +1,6 @@
 package ovh.paulem.mc.world;
 
-import ovh.paulem.mc.world.block.Block;
+import ovh.paulem.mc.world.block.types.Block;
 import ovh.paulem.mc.world.block.Blocks;
 
 public class Chunk {
@@ -25,7 +25,12 @@ public class Chunk {
     public int getBlockId(int x, int y, int z) { return blocks[x][y][z]; }
     public Block getBlock(int x, int y, int z) { return Blocks.blocks.get(getBlockId(x, y, z)); }
 
-    public void setBlockId(int x, int y, int z, int id) { blocks[x][y][z] = id; }
+    public void setBlockId(int x, int y, int z, int id) {
+        if (blocks[x][y][z] != id) {
+            blocks[x][y][z] = id;
+            bumpVersion(); // Incrémenter la version pour déclencher la reconstruction du mesh
+        }
+    }
     public void setBlock(int x, int y, int z, Block block) { setBlockId(x, y, z, block.getId()); }
 
     public int getVersion() { return version; }

@@ -1,6 +1,7 @@
 package ovh.paulem.mc;
 
 import ovh.paulem.mc.engine.Camera;
+import ovh.paulem.mc.engine.Hotbar;
 import ovh.paulem.mc.engine.Player;
 import ovh.paulem.mc.engine.Window;
 import ovh.paulem.mc.engine.renderer.Renderer;
@@ -9,6 +10,7 @@ import org.joml.Vector2d;
 import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFWErrorCallback;
 import org.lwjgl.opengl.GL;
+import ovh.paulem.mc.world.block.Blocks;
 
 import java.util.concurrent.*;
 
@@ -19,9 +21,18 @@ public class Main {
 
     private long window;
     private Renderer renderer;
+
     private Window windowWrapper;
     private World world;
     private Player player;
+    private Hotbar hotbar;
+
+    // Raycasting pour détection des blocs
+    private static final float RAY_MAX_DISTANCE = 5.0f;
+    private boolean leftMousePressed = false;
+    private boolean rightMousePressed = false;
+    private long lastBlockActionTime = 0;
+    private static final long BLOCK_ACTION_COOLDOWN = 250; // millisecondes
 
     // Physics executor for player movement on a separate thread
     private ExecutorService physicsExec;
@@ -71,9 +82,24 @@ public class Main {
         // capture mouse
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
+        // Initialiser la hotbar
+        hotbar = new Hotbar();
+
+        // Configuration des callbacks pour le scroll et les clics souris
+        glfwSetScrollCallback(window, (window, xoffset, yoffset) -> {
+            if (yoffset > 0) {
+                hotbar.previousSlot();
+            } else if (yoffset < 0) {
+                hotbar.nextSlot();
+            }
+        });
+
         windowWrapper = new Window(1280, 720);
         renderer = new Renderer();
         renderer.init();
+
+        // Associer la hotbar au renderer
+        renderer.setHotbar(hotbar);
 
         world = new World();
         renderer.setWorld(world);
@@ -108,6 +134,25 @@ public class Main {
                 frameCount = 0;
                 fpsTimer = 0;
                 glfwSetWindowTitle(window, "Minecraft Clone - FPS: " + currentFps);
+            }
+
+            // Détection des clics souris pour poser/casser des blocs
+            boolean currentLeftMouse = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+            boolean currentRightMouse = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+
+            // Détection des changements d'état des boutons de souris
+            if (currentLeftMouse && !leftMousePressed) {
+                leftMousePressed = true;
+                handleBlockBreak();
+            } else if (!currentLeftMouse && leftMousePressed) {
+                leftMousePressed = false;
+            }
+
+            if (currentRightMouse && !rightMousePressed) {
+                rightMousePressed = true;
+                handleBlockPlace();
+            } else if (!currentRightMouse && rightMousePressed) {
+                rightMousePressed = false;
             }
 
             // Mouse look
@@ -207,5 +252,165 @@ public class Main {
 
     public static void main(String[] args) throws Exception {
         new Main().run();
+    }
+
+    // Structure pour stocker le résultat du raycasting
+    private static class RaycastResult {
+        public boolean hit;
+        public int x, y, z; // Position du bloc touché
+        public int face;    // Face touchée (0:+X, 1:-X, 2:+Y, 3:-Y, 4:+Z, 5:-Z)
+
+        public RaycastResult() {
+            this.hit = false;
+        }
+    }
+
+    // Méthode pour le raycasting - détection des blocs
+    private RaycastResult raycast() {
+        Camera camera = renderer.getCamera();
+        Vector3f position = new Vector3f(camera.getPosition());
+
+        // Direction du regard
+        double yaw = Math.toRadians(camera.getRotation().y);
+        double pitch = Math.toRadians(camera.getRotation().x);
+
+        Vector3f direction = new Vector3f(
+            (float)(Math.sin(yaw) * Math.cos(pitch)),
+            (float)(-Math.sin(pitch)),
+            (float)(-Math.cos(yaw) * Math.cos(pitch))
+        );
+        direction.normalize();
+
+        return raycastBlock(position, direction, RAY_MAX_DISTANCE);
+    }
+
+    // Implémentation de l'algorithme de raycasting pour les blocs
+    private RaycastResult raycastBlock(Vector3f start, Vector3f dir, float maxDistance) {
+        RaycastResult result = new RaycastResult();
+
+        // Position actuelle
+        int x = (int) Math.floor(start.x);
+        int y = (int) Math.floor(start.y);
+        int z = (int) Math.floor(start.z);
+
+        // Direction du rayon normalisée
+        Vector3f rayDir = new Vector3f(dir).normalize();
+
+        // Calcul des pas et distances initiales
+        float stepX = rayDir.x > 0 ? 1 : -1;
+        float stepY = rayDir.y > 0 ? 1 : -1;
+        float stepZ = rayDir.z > 0 ? 1 : -1;
+
+        // Distances jusqu'aux prochains bords de blocs
+        float tMaxX = rayDir.x != 0 ? Math.abs((x + (stepX > 0 ? 1 : 0) - start.x) / rayDir.x) : Float.MAX_VALUE;
+        float tMaxY = rayDir.y != 0 ? Math.abs((y + (stepY > 0 ? 1 : 0) - start.y) / rayDir.y) : Float.MAX_VALUE;
+        float tMaxZ = rayDir.z != 0 ? Math.abs((z + (stepZ > 0 ? 1 : 0) - start.z) / rayDir.z) : Float.MAX_VALUE;
+
+        // Distances entre intersections avec les bords
+        float tDeltaX = rayDir.x != 0 ? Math.abs(1 / rayDir.x) : Float.MAX_VALUE;
+        float tDeltaY = rayDir.y != 0 ? Math.abs(1 / rayDir.y) : Float.MAX_VALUE;
+        float tDeltaZ = rayDir.z != 0 ? Math.abs(1 / rayDir.z) : Float.MAX_VALUE;
+
+        // Face du bloc touchée (-1 = non défini)
+        int face = -1;
+        float distance = 0;
+
+        // Boucle principale du raycasting
+        while (distance < maxDistance) {
+            // Vérifier si le bloc actuel n'est pas de l'air
+            if (!world.isPassable(x, y, z)) {
+                result.hit = true;
+                result.x = x;
+                result.y = y;
+                result.z = z;
+                result.face = face;
+                return result;
+            }
+
+            // Trouver le prochain bloc à traverser
+            if (tMaxX < tMaxY && tMaxX < tMaxZ) {
+                // Traverser dans la direction X
+                distance = tMaxX;
+                tMaxX += tDeltaX;
+                x += (int) stepX;
+                face = stepX > 0 ? 1 : 0; // Face -X si on avance en +X, et vice versa
+            } else if (tMaxY < tMaxZ) {
+                // Traverser dans la direction Y
+                distance = tMaxY;
+                tMaxY += tDeltaY;
+                y += (int) stepY;
+                face = stepY > 0 ? 3 : 2; // Face -Y si on avance en +Y, et vice versa
+            } else {
+                // Traverser dans la direction Z
+                distance = tMaxZ;
+                tMaxZ += tDeltaZ;
+                z += (int) stepZ;
+                face = stepZ > 0 ? 5 : 4; // Face -Z si on avance en +Z, et vice versa
+            }
+        }
+
+        // Aucun bloc trouvé dans la portée maximale
+        return result;
+    }
+
+    // Méthode pour casser un bloc
+    private void handleBlockBreak() {
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastBlockActionTime < BLOCK_ACTION_COOLDOWN) {
+            return;  // Évite les actions trop rapides
+        }
+        lastBlockActionTime = currentTime;
+
+        RaycastResult result = raycast();
+        if (result.hit) {
+            // Remplacer le bloc par de l'air en utilisant world.setBlock pour assurer la mise à jour du rendu
+            world.setBlock(result.x, result.y, result.z, Blocks.AIR);
+        }
+    }
+
+    // Méthode pour poser un bloc
+    private void handleBlockPlace() {
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastBlockActionTime < BLOCK_ACTION_COOLDOWN) {
+            return;  // Évite les actions trop rapides
+        }
+        lastBlockActionTime = currentTime;
+
+        RaycastResult result = raycast();
+        if (result.hit) {
+            // Calculer la position du nouveau bloc en fonction de la face touchée
+            int newX = result.x;
+            int newY = result.y;
+            int newZ = result.z;
+
+            // Ajuster les coordonnées en fonction de la face touchée
+            switch (result.face) {
+                case 0: newX += 1; break; // Face +X
+                case 1: newX -= 1; break; // Face -X
+                case 2: newY += 1; break; // Face +Y
+                case 3: newY -= 1; break; // Face -Y
+                case 4: newZ += 1; break; // Face +Z
+                case 5: newZ -= 1; break; // Face -Z
+            }
+
+            // Vérifier si le nouveau bloc ne collisionne pas avec le joueur
+            Vector3f playerPos = player.getPosition();
+            float playerMinX = playerPos.x - Player.WIDTH/2;
+            float playerMaxX = playerPos.x + Player.WIDTH/2;
+            float playerMinY = playerPos.y;
+            float playerMaxY = playerPos.y + Player.HEIGHT;
+            float playerMinZ = playerPos.z - Player.DEPTH/2;
+            float playerMaxZ = playerPos.z + Player.DEPTH/2;
+
+            // Si le bloc se trouve dans l'espace occupé par le joueur, ne pas le placer
+            if (newX >= playerMinX && newX <= playerMaxX &&
+                newY >= playerMinY && newY <= playerMaxY &&
+                newZ >= playerMinZ && newZ <= playerMaxZ) {
+                return;
+            }
+
+            // Placer le bloc sélectionné avec world.setBlock pour assurer la mise à jour du rendu
+            world.setBlock(newX, newY, newZ, hotbar.getSelectedBlock());
+        }
     }
 }

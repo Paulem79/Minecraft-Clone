@@ -1,26 +1,22 @@
 package ovh.paulem.mc.engine.renderer.texture;
 
+import ovh.paulem.mc.world.block.types.Block;
+
 /**
  * Texture avec superposition (overlay)
  * Utilisée pour les côtés des blocs d'herbe qui combinent
  * une texture de base et une texture de superposition
  */
 public class OverlayTexture extends Texture {
-    private final Texture overlay;
-    private final boolean tinted;  // Si l'overlay doit être teinté (comme l'herbe)
+    private final TintTexture overlay;
 
-    public OverlayTexture(String baseTexturePath, String overlayTexturePath, boolean tinted) {
-        super(baseTexturePath);
-        this.overlay = new Texture(overlayTexturePath);
-        this.tinted = tinted;
+    public OverlayTexture(Block baseBlock, String baseTexturePath, String overlayTexturePath) {
+        super(baseBlock, baseTexturePath);
+        this.overlay = new TintTexture(baseBlock, overlayTexturePath, TintTexture.TintType.GRASS);
     }
 
-    public Texture getOverlay() {
+    public TintTexture getOverlay() {
         return overlay;
-    }
-
-    public boolean isTinted() {
-        return tinted;
     }
     
     @Override
@@ -35,5 +31,12 @@ public class OverlayTexture extends Texture {
     public void delete() {
         super.delete();
         overlay.delete();
+    }
+
+    @Override
+    public String toString() {
+        return "OverlayTexture{" +
+                "overlay=" + overlay +
+                "} " + super.toString();
     }
 }
