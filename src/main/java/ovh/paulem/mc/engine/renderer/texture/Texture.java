@@ -3,6 +3,8 @@ package ovh.paulem.mc.engine.renderer.texture;
 import org.lwjgl.stb.STBImage;
 import ovh.paulem.mc.world.block.types.Block;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.ByteBuffer;
@@ -23,15 +25,13 @@ public class Texture {
         this.baseBlock = baseBlock;
         this.resourcePath = resourcePath;
 
-        URL url = getClass().getResource(resourcePath);
-        if (url == null) {
-            url = getClass().getResource("/textures/stone.png");
-        }
-        String filePath;
-        try {
-            filePath = java.nio.file.Paths.get(url.toURI()).toString();
-        } catch (URISyntaxException e) {
-            throw new RuntimeException("Invalid texture URI: " + resourcePath, e);
+        InputStream inputStream = getClass().getResourceAsStream(resourcePath);
+        if (inputStream == null) {
+            inputStream = getClass().getResourceAsStream("/textures/stone.png");
+
+            if (inputStream == null) {
+                throw new RuntimeException("Resource not found: " + resourcePath);
+            }
         }
 
         int texId = glGenTextures();
@@ -50,13 +50,19 @@ public class Texture {
             IntBuffer pw = stack.mallocInt(1);
             IntBuffer ph = stack.mallocInt(1);
             IntBuffer pc = stack.mallocInt(1);
-            image = STBImage.stbi_load(filePath, pw, ph, pc, 4);
+
+            byte[] textureBytes = inputStream.readAllBytes();
+            ByteBuffer buffer = ByteBuffer.allocateDirect(textureBytes.length).put(textureBytes);
+            buffer.flip();
+            image = STBImage.stbi_load_from_memory(buffer, pw, ph, pc, 4);
             if (image == null) {
                 throw new RuntimeException("Failed to load texture: " + resourcePath + " - " + STBImage.stbi_failure_reason());
             }
             w = pw.get(0);
             h = ph.get(0);
             comp = pc.get(0);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
         this.width = w;
         this.height = h;

@@ -9,7 +9,7 @@ import java.util.Map;
 public class Blocks {
     public static final Map<Integer, Block> blocks = new HashMap<>();
 
-    public static final SingleFaceBlock AIR = register(new SingleFaceBlock("air", 0));
+    public static final AirBlock AIR = register(new AirBlock("air", 0));
     public static final SingleFaceBlock STONE = register(new SingleFaceBlock("stone", 1));
     public static final SingleFaceBlock DIRT = register(new SingleFaceBlock("dirt", 2));
     public static final TintTopFaceBlock GRASS_BLOCK = register(new GrassBlock("grass_block", 3, TintType.GRASS));

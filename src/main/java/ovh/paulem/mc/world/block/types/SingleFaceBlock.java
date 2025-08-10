@@ -6,24 +6,16 @@ import ovh.paulem.mc.world.block.Face;
 import java.util.*;
 
 public class SingleFaceBlock extends Block {
-    private final boolean transparent;
-
     public SingleFaceBlock(String name, int id) {
         this(name, id, false);
     }
 
     public SingleFaceBlock(String name, int id, boolean transparent) {
         super(name, id, transparent);
-        this.transparent = transparent;
     }
 
     @Override
     public void serveTextures(Map<String, Texture> textureCache) {
         new Texture(this, getFaceTextureName(Face.POS_X)).serve(textureCache);
-    }
-
-    @Override
-    public boolean isTransparent() {
-        return transparent;
     }
 }

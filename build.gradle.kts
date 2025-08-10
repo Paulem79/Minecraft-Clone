@@ -59,11 +59,11 @@ tasks.register<Jar>("fatJar") {
     manifest {
         attributes(mapOf("Main-Class" to application.mainClass.get()))
     }
-    archiveClassifier.set("all")
+    archiveFileName.set("Minecraft-Clone.jar")
 }
 
 // --- JPACKAGE ---
-val jvmOpts = listOf("-Dfile.encoding=UTF-8", "--add-exports=javafx.graphics/com.sun.glass.ui=ALL-UNNAMED", "--add-opens=javafx.graphics/javafx.scene.layout=ALL-UNNAMED")
+val jvmOpts = listOf("-Dfile.encoding=UTF-8")
 
 tasks.withType<JPackageTask>().configureEach {
     dependsOn("fatJar")
@@ -107,10 +107,10 @@ tasks.register<JPackageTask>("zipjpackage") {
 
 tasks.register<Zip>("renameZip") {
     group = tasks.jpackage.get().group
-    archiveFileName.set(infra + "-FlowJsonCreator-" + project.version + ".zip")
+    archiveFileName.set(infra + "-Minecraft-Clone-" + project.version + ".zip")
     destinationDirectory.set(layout.projectDirectory.dir("dist"))
 
-    from(layout.projectDirectory.dir("dist/FlowJsonCreator"))
+    from(layout.projectDirectory.dir("dist/Minecraft-Clone"))
 }
 
 tasks.jpackage {
@@ -139,6 +139,15 @@ tasks.jpackage {
             // winUpdateUrl can be interesting for auto-updates
         }
     }
+}
+
+tasks.register<JavaExec>("runFatJar") {
+    dependsOn(tasks.clean, "fatJar")
+
+    group = "application"
+    description = "Exécute le fat jar généré"
+    classpath = files("build/libs/Minecraft-Clone.jar")
+    mainClass.set(application.mainClass.get())
 }
 
 tasks.register<Delete>("deleteDist") {
