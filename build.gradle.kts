@@ -91,12 +91,12 @@ tasks.register<JPackageTask>("zipjpackage") {
     }
 
     mac {
-        icon = layout.projectDirectory.dir("src").dir("main").dir("resources").dir("assets").file("icons.icns")
+        //icon = layout.projectDirectory.dir("src").dir("main").dir("resources").dir("assets").file("icons.icns")
         infra = "macos"
     }
 
     windows {
-        icon = layout.projectDirectory.dir("src").dir("main").dir("resources").dir("assets").file("icons.ico")
+        //icon = layout.projectDirectory.dir("src").dir("main").dir("resources").dir("assets").file("icons.ico")
 
         winConsole = true
         infra = "windows"
@@ -119,13 +119,13 @@ tasks.jpackage {
     }
 
     mac {
-        icon = layout.projectDirectory.dir("src").dir("main").dir("resources").dir("assets").file("icons.icns")
+        //icon = layout.projectDirectory.dir("src").dir("main").dir("resources").dir("assets").file("icons.icns")
 
         type = ImageType.DMG
     }
 
     windows {
-        icon = layout.projectDirectory.dir("src").dir("main").dir("resources").dir("assets").file("icons.ico")
+        //icon = layout.projectDirectory.dir("src").dir("main").dir("resources").dir("assets").file("icons.ico")
 
         type = ImageType.MSI
 
