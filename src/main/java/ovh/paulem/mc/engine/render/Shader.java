@@ -81,6 +81,11 @@ public class Shader {
         glUniform3f(glGetUniformLocation(programId, name), x, y, z);
     }
 
+    // Envoi d'un vec2
+    public void setUniform(String name, float x, float y) {
+        glUniform2f(glGetUniformLocation(programId, name), x, y);
+    }
+
     public void detach() {
         glUseProgram(0);
     }

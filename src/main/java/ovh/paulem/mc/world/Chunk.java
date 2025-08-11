@@ -1,6 +1,7 @@
 package ovh.paulem.mc.world;
 
 import lombok.Getter;
+import org.joml.Vector3f;
 import ovh.paulem.mc.world.block.types.Block;
 import ovh.paulem.mc.world.block.Blocks;
 
@@ -66,6 +67,10 @@ public class Chunk {
 
     public void markClean() {
         dirty = false;
+    }
+
+    public byte getLightLevel(Vector3f coords) {
+        return getLightLevel((int) coords.x, (int) coords.y, (int) coords.z);
     }
 
     public byte getLightLevel(int x, int y, int z) {

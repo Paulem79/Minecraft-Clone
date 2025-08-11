@@ -5,6 +5,7 @@ import ovh.paulem.mc.engine.Camera;
 import ovh.paulem.mc.engine.Hotbar;
 import ovh.paulem.mc.engine.Window;
 import ovh.paulem.mc.engine.render.texture.*;
+import ovh.paulem.mc.math.FastRandom;
 import ovh.paulem.mc.world.Biome;
 import ovh.paulem.mc.world.block.types.Block;
 import ovh.paulem.mc.world.Chunk;
@@ -58,6 +59,11 @@ public class Render {
     // Map temporaire pour stocker les résultats de meshing asynchrone
     private final Map<Chunk, Future<MeshBuildResult>> meshFutures = new ConcurrentHashMap<>();
 
+    private ParticleSystem particleSystem = new ParticleSystem();
+    private Shader particleShader;
+    private int particleVao = 0;
+    private int particleVbo = 0;
+
     public void init() {
         // Active OpenGL
         GL.createCapabilities();
@@ -71,10 +77,33 @@ public class Render {
         // Charger shader
         shader = new Shader("/shaders/vertex.glsl", "/shaders/fragment.glsl");
 
+        // Charger le shader de particules
+        particleShader = new Shader("/shaders/particle_vertex.glsl", "/shaders/particle_fragment.glsl");
+        // Générer VAO/VBO pour les particules (1 buffer dynamique)
+        int[] vaos = new int[1];
+        int[] vbos = new int[1];
+        glGenVertexArrays(vaos);
+        glGenBuffers(vbos);
+        particleVao = vaos[0];
+        particleVbo = vbos[0];
+        glBindVertexArray(particleVao);
+        glBindBuffer(GL_ARRAY_BUFFER, particleVbo);
+        // 3 floats pos, 3 floats color, 1 float size, 1 float lightLevel
+        glVertexAttribPointer(0, 3, GL_FLOAT, false, 8 * Float.BYTES, 0);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(1, 3, GL_FLOAT, false, 8 * Float.BYTES, 3 * Float.BYTES);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(2, 1, GL_FLOAT, false, 8 * Float.BYTES, 6 * Float.BYTES);
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(3, 1, GL_FLOAT, false, 8 * Float.BYTES, 7 * Float.BYTES);
+        glEnableVertexAttribArray(3);
+        glBindVertexArray(0);
+
         Blocks.blocks.forEach((integer, block) -> block.serveTextures(Textures.textureCache));
 
         // Caméra
         camera = new Camera();
+        particleSystem = new ParticleSystem();
     }
 
     public void setWorld(World world) {
@@ -197,11 +226,6 @@ public class Render {
         // Désactiver le shader 3D avant de dessiner l'UI 2D
         shader.detach();
 
-        // Dessiner la hotbar si elle est initialisée
-        if (hotbarRenderer != null) {
-            hotbarRenderer.render(window);
-        }
-
         // --- Affichage des bordures de chunk (F3+G) ---
         // Détection de F3+G pour activer/désactiver l'affichage des bordures de chunk
         if ((glfwGetKey(window.getGLFWWindow(), GLFW_KEY_F3) == GLFW_PRESS) &&
@@ -210,6 +234,93 @@ public class Render {
         }
         if (MC.showChunkBorders) {
             renderChunkBorders(projection, view);
+        }
+
+        // Mise à jour et rendu des particules
+        particleSystem.update((float) MC.INSTANCE.getDeltaTime(), world);
+        renderParticles(projection, view);
+
+        // Dessiner la hotbar si elle est initialisée (après les particules)
+        if (hotbarRenderer != null) {
+            hotbarRenderer.render(window);
+        }
+    }
+
+    private void renderParticles(Matrix4f projection, Matrix4f view) {
+        List<Particle> particles = particleSystem.getParticles();
+        if (particles.isEmpty()) return;
+        // Grouper les particules par (texturePath, uOffset, vOffset)
+        Map<String, Map<String, List<Particle>>> grouped = new HashMap<>();
+        for (Particle p : particles) {
+            if (p.texturePath == null) continue;
+            String tex = p.texturePath;
+            // On regroupe aussi par offset UV pour chaque texture
+            String offsetKey = p.uOffset + "," + p.vOffset;
+            grouped.computeIfAbsent(tex, k -> new HashMap<>())
+                   .computeIfAbsent(offsetKey, k -> new ArrayList<>())
+                   .add(p);
+        }
+        for (Map.Entry<String, Map<String, List<Particle>>> texEntry : grouped.entrySet()) {
+            String texturePath = texEntry.getKey();
+            Texture tex = Textures.textureCache.get(texturePath);
+            if (tex != null) tex.bind(0);
+            for (Map.Entry<String, List<Particle>> offsetEntry : texEntry.getValue().entrySet()) {
+                List<Particle> group = offsetEntry.getValue();
+                if (group.isEmpty()) continue;
+                // Tous les offsets du groupe sont identiques
+                Particle ref = group.get(0);
+                float[] data = new float[group.size() * 8];
+                int i = 0;
+                for (Particle p : group) {
+                    data[i++] = p.position.x;
+                    data[i++] = p.position.y;
+                    data[i++] = p.position.z;
+                    data[i++] = p.color.x;
+                    data[i++] = p.color.y;
+                    data[i++] = p.color.z;
+                    data[i++] = p.size;
+                    data[i++] = p.lightLevel;
+                }
+                glBindBuffer(GL_ARRAY_BUFFER, particleVbo);
+                glBufferData(GL_ARRAY_BUFFER, data, GL_DYNAMIC_DRAW);
+                glBindVertexArray(particleVao);
+                particleShader.use();
+                particleShader.setUniformMat4("projection", projection);
+                particleShader.setUniformMat4("view", view);
+                particleShader.setUniform("particleTexture", 0);
+                // Offset UV du groupe
+                particleShader.setUniform("uvOffset", ref.uOffset, ref.vOffset);
+                glEnable(GL_PROGRAM_POINT_SIZE);
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                glDepthMask(false);
+                glDrawArrays(GL_POINTS, 0, group.size());
+                int err = glGetError();
+                if (err != 0) System.out.println("OpenGL ERROR après draw particules: " + err);
+                glDepthMask(true);
+                glDisable(GL_BLEND);
+                glBindVertexArray(0);
+                glUseProgram(0);
+            }
+        }
+    }
+
+    public void spawnBlockParticles(Vector3f position, Block block) {
+        String texturePath = block.getFaceTextureName(0); // Face 0 = face principale
+        for (int i = 0; i < 128; i++) {
+            Vector3f vel = new Vector3f((float)Math.random()-0.5f, (float)Math.random(), (float)Math.random()-0.5f).mul(2f);
+            float size = 0.08f + (float)Math.random()*0.07f; // Particules plus petites
+            float life = 5.0f; // 5 secondes pour debug
+            // Coordonnées UV aléatoires pour un "bout" de texture
+            float uOffset = (float)Math.random();
+            float vOffset = (float)Math.random();
+            // Couleur blanche (sera ignorée si la texture est utilisée)
+            Vector3f color = new Vector3f(1, 1, 1);
+
+            float randomX = FastRandom.INSTANCE.nextFloat(-0.25f, 0.25f);
+            float randomY = FastRandom.INSTANCE.nextFloat(-0.25f, 0.25f);
+            float randomZ = FastRandom.INSTANCE.nextFloat(-0.25f, 0.25f);
+            particleSystem.addParticle(new Particle(new Vector3f(position).add(randomX, randomY, randomZ), vel, color, life, size, texturePath, uOffset, vOffset));
         }
     }
 
@@ -591,7 +702,7 @@ public class Render {
     }
 
     // Utilitaire pour éviter les ArrayIndexOutOfBounds lors de l'accès à la lumière
-    private static float safeGetLightLevel(Chunk chunk, int x, int y, int z) {
+    public static float safeGetLightLevel(Chunk chunk, int x, int y, int z) {
         if (y >= Chunk.CHUNK_Y) return 1.0f; // ciel
         if (x < 0 || y < 0 || z < 0) return 0.0f; // hors chunk ou souterrain
         // On va lisser entre les chunks en accédant aux voisins même hors chunk courant

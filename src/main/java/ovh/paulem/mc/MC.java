@@ -12,6 +12,7 @@ import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFWErrorCallback;
 import org.lwjgl.opengl.GL;
 import ovh.paulem.mc.world.block.Blocks;
+import ovh.paulem.mc.world.block.types.Block;
 
 import java.awt.*;
 import java.util.concurrent.*;
@@ -60,6 +61,11 @@ public class MC {
     private int frameCount = 0;
     private double fpsTimer = 0;
     private int currentFps = 0;
+
+    // Retourne le temps écoulé entre les frames en secondes (inverse du FPS actuel)
+    public double getDeltaTime() {
+        return currentFps > 0 ? 1.0 / currentFps : 0.0;
+    }
 
     // Pour effet de transition FOV
     private float currentFov = 70.0f;
@@ -384,7 +390,12 @@ public class MC {
         RaycastResult result = raycast();
         if (result.hit) {
             // Remplacer le bloc par de l'air en utilisant world.setBlock pour assurer la mise à jour du rendu
+            Block block = world.getBlock(result.x, result.y, result.z);
             world.setBlock(result.x, result.y, result.z, Blocks.AIR);
+            // Générer les particules si ce n'est pas de l'air
+            if (block != null && block.isBlock()) {
+                MC.INSTANCE.getRender().spawnBlockParticles(new Vector3f(result.x+0.5f, result.y+0.5f, result.z+0.5f), block);
+            }
         }
     }
 
