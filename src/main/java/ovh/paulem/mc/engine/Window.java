@@ -4,14 +4,16 @@ import org.joml.Matrix4f;
 
 public class Window {
 
+    private final long window;
     private int width;
     private int height;
     private float fov = 70.0f;
     private Matrix4f projectionMatrix;
 
-    public Window(int width, int height) {
+    public Window(int width, int height, long window) {
         this.width = width;
         this.height = height;
+        this.window = window;
         updateProjectionMatrix();
     }
 
@@ -28,6 +30,10 @@ public class Window {
 
     public float getFov() {
         return fov;
+    }
+
+    public long getGLFWWindow() {
+        return window;
     }
 
     private void updateProjectionMatrix() {

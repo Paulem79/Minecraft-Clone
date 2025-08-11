@@ -1,7 +1,10 @@
 package ovh.paulem.mc.engine;
 
+import ovh.paulem.mc.world.Chunk;
 import ovh.paulem.mc.world.World;
 import org.joml.Vector3f;
+
+import java.util.List;
 
 public class Player {
     // Player dimensions (used by both main and physics threads)
@@ -11,7 +14,18 @@ public class Player {
 
     private final Vector3f position = new Vector3f(8, 100, 8);
     private final Vector3f velocity = new Vector3f(0, 0, 0);
+    private final Camera camera;
+    private final World world;
     private boolean onGround = false;
+
+    public Player(World world, Camera camera) {
+        this.world = world;
+        this.camera = camera;
+    }
+
+    public Camera getCamera() {
+        return camera;
+    }
 
     public Vector3f getPosition() { return position; }
     public Vector3f getVelocity() { return velocity; }
@@ -231,5 +245,36 @@ public class Player {
                 for (int bz = startZ; bz <= endZ; bz++)
                     if (!world.isPassable(bx, by, bz)) return true;
         return false;
+    }
+
+    // Retourne la direction cardinale du regard du joueur
+    public String getLookingDirection() {
+        float yaw = getCamera().getRotation().y;
+        yaw = (yaw % 360 + 360) % 360; // normalise entre 0 et 360
+
+        if (yaw >= 45 && yaw < 135) {
+            return "Est";
+        } else if (yaw >= 135 && yaw < 225) {
+            return "Sud";
+        } else if (yaw >= 225 && yaw < 315) {
+            return "Ouest";
+        } else {
+            return "Nord";
+        }
+    }
+
+    public List<Chunk> getChunksAround(int radius) {
+        int px = (int) Math.floor(position.x);
+        int pz = (int) Math.floor(position.z);
+        List<Chunk> chunks = new java.util.ArrayList<>();
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                Chunk chunk = world.getChunkAt(px + dx * Chunk.CHUNK_X, pz + dz * Chunk.CHUNK_Z);
+                if (chunk != null) {
+                    chunks.add(chunk);
+                }
+            }
+        }
+        return chunks;
     }
 }

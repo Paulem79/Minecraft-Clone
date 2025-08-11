@@ -11,7 +11,6 @@ import java.util.logging.Logger;
  * Gère la sauvegarde et le chargement des chunks sur le disque
  */
 public class ChunkIO {
-    private static final Logger LOGGER = Logger.getLogger(ChunkIO.class.getName());
     private final Path worldDirectory;
     private final World world;
 
@@ -22,9 +21,9 @@ public class ChunkIO {
         try {
             Files.createDirectories(worldDirectory);
         } catch (IOException e) {
-            LOGGER.severe("Erreur lors de la création du répertoire de monde: " + e.getMessage());
+            e.printStackTrace();
         }
-        LOGGER.fine("Folder created: " + worldDirectory);
+        System.out.println("Folder created: " + worldDirectory);
     }
 
     /**
@@ -61,7 +60,7 @@ public class ChunkIO {
                 Files.write(chunkFile, compressed);
             }
         } catch (IOException e) {
-            LOGGER.warning("Erreur lors de la sauvegarde du chunk (" + chunkX + "," + chunkZ + "): " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
@@ -105,7 +104,7 @@ public class ChunkIO {
 
                 return chunk;
             } catch (IOException e) {
-                LOGGER.warning("Erreur lors du chargement du chunk (" + chunkX + "," + chunkZ + "): " + e.getMessage());
+                e.printStackTrace();
                 return null;
             }
         } catch (IOException e) {
@@ -118,6 +117,32 @@ public class ChunkIO {
      */
     public boolean chunkExists(int chunkX, int chunkZ) {
         return Files.exists(getChunkFile(chunkX, chunkZ));
+    }
+
+    /**
+     * Sauvegarde la seed du monde dans world.dat
+     */
+    public void saveWorldSeed(long seed) {
+        Path seedFile = worldDirectory.resolve("world.dat");
+        try (DataOutputStream dos = new DataOutputStream(Files.newOutputStream(seedFile))) {
+            dos.writeLong(seed);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Charge la seed du monde depuis world.dat, ou retourne null si absent
+     */
+    public Long loadWorldSeed() {
+        Path seedFile = worldDirectory.resolve("world.dat");
+        if (!Files.exists(seedFile)) return null;
+        try (DataInputStream dis = new DataInputStream(Files.newInputStream(seedFile))) {
+            return dis.readLong();
+        } catch (IOException e) {
+            e.printStackTrace();
+            return null;
+        }
     }
 
     private Path getRegionDirectory(int chunkX, int chunkZ) {

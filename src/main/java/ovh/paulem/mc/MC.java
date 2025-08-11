@@ -1,5 +1,6 @@
 package ovh.paulem.mc;
 
+import lombok.Getter;
 import ovh.paulem.mc.engine.Camera;
 import ovh.paulem.mc.engine.Hotbar;
 import ovh.paulem.mc.engine.Player;
@@ -18,14 +19,26 @@ import java.util.concurrent.*;
 import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.system.MemoryUtil.NULL;
 
-public class Main {
+public class MC {
+    public static MC INSTANCE;
 
+    public MC() {
+        INSTANCE = this;
+    }
+
+    @Getter
     private long window;
+    @Getter
     private Render render;
 
+    @Getter
     private Window windowWrapper;
+    @Getter
     private World world;
+    @Getter
     private Player player;
+
+    @Getter
     private Hotbar hotbar;
 
     // Raycasting pour détection des blocs
@@ -51,6 +64,9 @@ public class Main {
     // Pour effet de transition FOV
     private float currentFov = 70.0f;
     private final float fovTransitionSpeed = 8.5f; // Plus grand = plus rapide
+
+    // Affichage des bordures de chunk (F3+G)
+    public static boolean showChunkBorders = false;
 
     public void run() throws Exception {
         init();
@@ -98,7 +114,7 @@ public class Main {
             }
         });
 
-        windowWrapper = new Window(width, height);
+        windowWrapper = new Window(width, height, window);
         render = new Render();
         render.init();
 
@@ -108,7 +124,7 @@ public class Main {
         world = new World();
         render.setWorld(world);
 
-        player = new Player();
+        player = new Player(world, render.getCamera());
         player.setPosition(8, 120, 8);
 
         physicsExec = Executors.newSingleThreadExecutor(r -> {
@@ -137,7 +153,8 @@ public class Main {
                 currentFps = frameCount;
                 frameCount = 0;
                 fpsTimer = 0;
-                glfwSetWindowTitle(window, "Minecraft Clone - FPS: " + currentFps);
+
+                glfwSetWindowTitle(window, "Minecraft Clone - FPS: " + currentFps + " Looking: " + player.getLookingDirection());
             }
 
             // Détection des clics souris pour poser/casser des blocs
@@ -206,7 +223,6 @@ public class Main {
             float targetFov = sprint ? 90.0f : 70.0f;
             // Interpolation lissée du FOV
             currentFov += (targetFov - currentFov) * Math.min(1, fovTransitionSpeed * dt);
-            cam.setFov(currentFov);
             windowWrapper.setFov(currentFov);
 
             boolean jump = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
@@ -255,7 +271,7 @@ public class Main {
     }
 
     public static void main(String[] args) throws Exception {
-        new Main().run();
+        new MC().run();
     }
 
     // Structure pour stocker le résultat du raycasting

@@ -7,6 +7,8 @@ import java.util.zip.DeflaterOutputStream;
 import java.util.zip.InflaterInputStream;
 
 public class ZLibUtils {
+    public static final boolean ENABLED = false;
+
     /**
      * Compresses the input byte array using the ZLIB compression algorithm.
      *
@@ -15,13 +17,17 @@ public class ZLibUtils {
      * @throws IOException if an I/O error occurs during compression
      */
     public static byte[] compress(byte[] data) throws IOException {
-        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        if(ENABLED) {
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
 
-        try (DeflaterOutputStream dos = new DeflaterOutputStream(bos)) {
-            dos.write(data);
+            try (DeflaterOutputStream dos = new DeflaterOutputStream(bos)) {
+                dos.write(data);
+            }
+
+            return bos.toByteArray();
         }
 
-        return bos.toByteArray();
+        return data;
     }
 
     /**
@@ -32,16 +38,19 @@ public class ZLibUtils {
      * @throws IOException if an I/O error occurs during decompression
      */
     public static byte[] decompress(byte[] data) throws IOException {
-        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        if(ENABLED) {
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
 
-        try (InflaterInputStream iis = new InflaterInputStream(new ByteArrayInputStream(data))) {
-            byte[] buffer = new byte[1024];
-            int len;
-            while ((len = iis.read(buffer)) > 0) {
-                bos.write(buffer, 0, len);
+            try (InflaterInputStream iis = new InflaterInputStream(new ByteArrayInputStream(data))) {
+                byte[] buffer = new byte[1024];
+                int len;
+                while ((len = iis.read(buffer)) > 0) {
+                    bos.write(buffer, 0, len);
+                }
             }
-        }
 
-        return bos.toByteArray();
+            return bos.toByteArray();
+        }
+        return data;
     }
 }

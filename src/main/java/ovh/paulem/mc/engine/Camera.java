@@ -7,7 +7,6 @@ public class Camera {
 
     private final Vector3f position;
     private final Vector3f rotation;
-    private float fov = 70.0f; // FOV par défaut (en degrés)
 
     public Camera() {
         this.position = new Vector3f(0, 0, 0);
@@ -46,13 +45,5 @@ public class Camera {
 
     public Vector3f getRotation() {
         return rotation;
-    }
-
-    public float getFov() {
-        return fov;
-    }
-
-    public void setFov(float fov) {
-        this.fov = fov;
     }
 }

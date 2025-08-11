@@ -21,6 +21,10 @@ dependencies {
     // BOM pour gérer les versions LWJGL
     implementation(platform("org.lwjgl:lwjgl-bom:3.3.6"))
 
+    // Lombok
+    implementation("org.projectlombok:lombok:1.18.32")
+    annotationProcessor("org.projectlombok:lombok:1.18.32")
+
     // Artefacts Java
     implementation("org.lwjgl:lwjgl")
     implementation("org.lwjgl:lwjgl-glfw")
@@ -36,7 +40,7 @@ dependencies {
 
 application {
     // Correction du nom de la classe principale
-    mainClass.set(project.group.toString() + ".Main")
+    mainClass.set(project.group.toString() + ".MC")
 }
 
 tasks.withType<Jar>().configureEach {

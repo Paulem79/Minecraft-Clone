@@ -1,11 +1,9 @@
 package ovh.paulem.mc;
 
-import ovh.paulem.mc.math.Seeds;
-
-import java.util.UUID;
-
 public class Values {
-    public static long SEED = Seeds.stringToSeed(UUID.randomUUID().toString());
+    // Rayon de rendu des chunks autour du joueur
+    public static final int RENDER_RADIUS = 5;
+
     // Configuration des caves
     public static double BASE_CAVE_SCALE = 0.05; // Échelle de base du bruit pour les caves
     public static double SIZE_NOISE_SCALE = 0.15; // Échelle du bruit pour la variation de taille

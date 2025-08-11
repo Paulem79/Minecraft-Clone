@@ -1,8 +1,11 @@
 package ovh.paulem.mc.world;
 
+import lombok.Getter;
+import org.jetbrains.annotations.Nullable;
 import ovh.paulem.mc.Values;
 import ovh.paulem.mc.engine.render.light.LightEngine;
 import ovh.paulem.mc.math.PerlinNoise;
+import ovh.paulem.mc.math.Seeds;
 import ovh.paulem.mc.world.block.types.Block;
 import ovh.paulem.mc.world.block.Blocks;
 
@@ -17,12 +20,12 @@ public class World {
         return chunks.values();
     }
 
-    private final PerlinNoise noise = new PerlinNoise(Values.SEED);
-    // Bruit de Perlin pour les caves
-    private final PerlinNoise caveNoise = new PerlinNoise(Values.SEED);
-    // Bruits additionnels pour la diversité des cavernes
-    private final PerlinNoise caveSizeNoise = new PerlinNoise(Values.SEED);
-    private final PerlinNoise caveFloorNoise = new PerlinNoise(Values.SEED);
+    @Getter
+    private final long seed;
+    private final PerlinNoise noise;
+    private final PerlinNoise caveNoise;
+    private final PerlinNoise caveSizeNoise;
+    private final PerlinNoise caveFloorNoise;
     // Background executor for async chunk generation
     private final ExecutorService chunkExecutor = Executors.newFixedThreadPool(Math.max(2, Runtime.getRuntime().availableProcessors() - 1));
     // Track which chunk keys are currently being generated to avoid duplicate tasks
@@ -30,23 +33,29 @@ public class World {
 
     // Système de sauvegarde et chargement de chunks
     private final ChunkIO chunkIO;
-    // Rayon de rendu des chunks autour du joueur
-    private final int renderRadius = 5;
     // Rayon supplémentaire pour ne pas décharger immédiatement les chunks
     private final int unloadBuffer = 2;
 
+    @Getter
     private final LightEngine lightEngine = new LightEngine();
-
-    public LightEngine getLightEngine() {
-        return lightEngine;
-    }
 
     private static long key(int cx, int cz) { return (((long)cx) << 32) ^ (cz & 0xffffffffL); }
 
     public World() {
         // Nom du monde - peut être paramétrable dans le futur
         chunkIO = new ChunkIO(this, "default");
-
+        Long loadedSeed = chunkIO.loadWorldSeed();
+        if (loadedSeed != null) {
+            this.seed = loadedSeed;
+        } else {
+            this.seed = Seeds.stringToSeed(java.util.UUID.randomUUID().toString());
+            chunkIO.saveWorldSeed(this.seed);
+        }
+        System.out.println("Seed: " + this.seed);
+        noise = new PerlinNoise(this.seed);
+        caveNoise = new PerlinNoise(this.seed);
+        caveSizeNoise = new PerlinNoise(this.seed);
+        caveFloorNoise = new PerlinNoise(this.seed);
         // schedule initial chunks around origin asynchronously
         ensureChunksAround(0, 0, 2);
     }
@@ -164,6 +173,7 @@ public class World {
 
                 // Mark chunk updated for renderers to rebuild meshes
                 chunk.bumpVersion();
+                chunk.bakeLight();
             } finally {
                 generating.remove(k);
             }
@@ -215,7 +225,7 @@ public class World {
         int pcz = Math.floorDiv((int)Math.floor(playerZ), Chunk.CHUNK_Z);
 
         // Assurez-vous que les chunks autour du joueur sont chargés
-        ensureChunksAround(pcx, pcz, renderRadius);
+        ensureChunksAround(pcx, pcz, Values.RENDER_RADIUS);
 
         // Décharge les chunks éloignés et sauvegarde les chunks modifiés
         unloadDistantChunks(pcx, pcz);
@@ -262,7 +272,7 @@ public class World {
      */
     private void unloadDistantChunks(int playerCx, int playerCz) {
         // Rayon de déchargement = renderRadius + unloadBuffer
-        int unloadRadius = renderRadius + unloadBuffer;
+        int unloadRadius = Values.RENDER_RADIUS + unloadBuffer;
         int unloadRadiusSq = unloadRadius * unloadRadius;
 
         // Créer une liste des chunks à décharger pour éviter ConcurrentModificationException
@@ -367,14 +377,16 @@ public class World {
         }
     }
 
+    @Nullable
     public Chunk getChunkAt(int x, int z) {
         int cx = Math.floorDiv(x, Chunk.CHUNK_X);
         int cz = Math.floorDiv(z, Chunk.CHUNK_Z);
         return getChunk(cx, cz);
     }
 
+    @Nullable
     public Chunk getChunk(int cx, int cz) {
         long k = key(cx, cz);
-        return chunks.computeIfAbsent(k, k1 -> {throw new RuntimeException("Chunk not found: " + cx + ", " + cz);});
+        return chunks.get(k);
     }
 }

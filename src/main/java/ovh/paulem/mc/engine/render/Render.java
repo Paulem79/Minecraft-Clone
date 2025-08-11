@@ -1,5 +1,6 @@
 package ovh.paulem.mc.engine.render;
 
+import ovh.paulem.mc.MC;
 import ovh.paulem.mc.engine.Camera;
 import ovh.paulem.mc.engine.Hotbar;
 import ovh.paulem.mc.engine.Window;
@@ -16,6 +17,7 @@ import ovh.paulem.mc.world.block.Blocks;
 import java.util.*;
 import java.util.concurrent.*;
 
+import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.opengl.GL46.*;
 
 public class Render {
@@ -198,6 +200,16 @@ public class Render {
         // Dessiner la hotbar si elle est initialisée
         if (hotbarRenderer != null) {
             hotbarRenderer.render(window);
+        }
+
+        // --- Affichage des bordures de chunk (F3+G) ---
+        // Détection de F3+G pour activer/désactiver l'affichage des bordures de chunk
+        if ((glfwGetKey(window.getGLFWWindow(), GLFW_KEY_F3) == GLFW_PRESS) &&
+            (glfwGetKey(window.getGLFWWindow(), GLFW_KEY_G) == GLFW_PRESS)) {
+            MC.showChunkBorders = !MC.showChunkBorders;
+        }
+        if (MC.showChunkBorders) {
+            renderChunkBorders(projection, view);
         }
     }
 
@@ -581,15 +593,84 @@ public class Render {
     // Utilitaire pour éviter les ArrayIndexOutOfBounds lors de l'accès à la lumière
     private static float safeGetLightLevel(Chunk chunk, int x, int y, int z) {
         if (y >= Chunk.CHUNK_Y) return 1.0f; // ciel
-        if (x == Chunk.CHUNK_X) {
-            return safeGetLightLevel(chunk, x-1, y, z);
+        if (x < 0 || y < 0 || z < 0) return 0.0f; // hors chunk ou souterrain
+        // On va lisser entre les chunks en accédant aux voisins même hors chunk courant
+        float sum = 0.0f;
+        int count = 0;
+        int[][] dirs = {{0,0,0},{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
+        for (int[] d : dirs) {
+            int nx = x + d[0];
+            int ny = y + d[1];
+            int nz = z + d[2];
+            Chunk refChunk = chunk;
+            int cx = nx, cy = ny, cz = nz;
+            // Si hors chunk courant, chercher le chunk voisin
+            if (nx < 0 || nx >= Chunk.CHUNK_X || nz < 0 || nz >= Chunk.CHUNK_Z) {
+                if (chunk.getWorld() == null) continue;
+                int wx = chunk.getOriginX() + nx;
+                int wz = chunk.getOriginZ() + nz;
+                refChunk = chunk.getWorld().getChunkAt(wx, wz);
+                if (refChunk == null) continue;
+                cx = (wx % Chunk.CHUNK_X + Chunk.CHUNK_X) % Chunk.CHUNK_X;
+                cz = (wz % Chunk.CHUNK_Z + Chunk.CHUNK_Z) % Chunk.CHUNK_Z;
+            }
+            if (cy < 0 || cy >= Chunk.CHUNK_Y) continue;
+            sum += refChunk.getLightLevel(cx, cy, cz) / 15.0f;
+            count++;
         }
-        if (z == Chunk.CHUNK_Z) {
-            return safeGetLightLevel(chunk, x, y, z-1);
+        if (count == 0) return chunk.getLightLevel(x, y, z) / 15.0f;
+        return sum / count;
+    }
+
+    // Affiche les bordures de chunk en 3D (wireframe)
+    private void renderChunkBorders(Matrix4f projection, Matrix4f view) {
+        if (world == null) return;
+        // Sauvegarder les matrices actuelles
+        glMatrixMode(GL_PROJECTION);
+        glPushMatrix();
+        glLoadMatrixf(projection.mul(view, new Matrix4f()).get(new float[16]));
+        glMatrixMode(GL_MODELVIEW);
+        glPushMatrix();
+        glLoadIdentity();
+        glUseProgram(0); // Pas de shader, couleur fixe
+        glDisable(GL_TEXTURE_2D);
+        glDisable(GL_CULL_FACE);
+        glLineWidth(2.0f);
+        float[] color = {1.0f, 1.0f, 0.0f, 1.0f}; // Jaune
+        glColor4f(color[0], color[1], color[2], color[3]);
+        for (Chunk chunk : MC.INSTANCE.getPlayer().getChunksAround(1)) {
+            float x0 = chunk.getOriginX();
+            float z0 = chunk.getOriginZ();
+            float x1 = x0 + Chunk.CHUNK_X;
+            float z1 = z0 + Chunk.CHUNK_Z;
+            float y0 = 0f;
+            float y1 = 256f;
+            // Bordures du chunk
+            float[][] chunkPts = {
+                {x0, y0, z0}, {x1, y0, z0}, {x1, y0, z1}, {x0, y0, z1},
+                {x0, y1, z0}, {x1, y1, z0}, {x1, y1, z1}, {x0, y1, z1}
+            };
+            int[][] chunkEdges = {
+                {0,1},{1,2},{2,3},{3,0}, // bas
+                {4,5},{5,6},{6,7},{7,4}, // haut
+                {0,4},{1,5},{2,6},{3,7}  // verticales
+            };
+            glBegin(GL_LINES);
+            // Bordures du chunk
+            for (int[] e : chunkEdges) {
+                float[] p0 = chunkPts[e[0]];
+                float[] p1 = chunkPts[e[1]];
+                glVertex3f(p0[0], p0[1], p0[2]);
+                glVertex3f(p1[0], p1[1], p1[2]);
+            }
+            glEnd();
         }
-        if (x < 0 || x >= Chunk.CHUNK_X || y < 0 || z < 0 || z >= Chunk.CHUNK_Z) {
-            return 0.0f; // souterrain ou hors chunk
-        }
-        return chunk.getLightLevel(x, y, z) / 15.0f;
+        glEnable(GL_CULL_FACE);
+        // Restaurer les matrices
+        glMatrixMode(GL_MODELVIEW);
+        glPopMatrix();
+        glMatrixMode(GL_PROJECTION);
+        glPopMatrix();
+        glMatrixMode(GL_MODELVIEW);
     }
 }
