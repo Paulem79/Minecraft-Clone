@@ -1,5 +1,6 @@
 package ovh.paulem.mc.engine;
 
+import lombok.Getter;
 import ovh.paulem.mc.world.Chunk;
 import ovh.paulem.mc.world.World;
 import org.joml.Vector3f;
@@ -12,24 +13,20 @@ public class Player {
     public static final float HEIGHT = 1.8f;
     public static final float DEPTH = 0.6f;
 
+    @Getter
     private final Vector3f position = new Vector3f(8, 100, 8);
+    @Getter
     private final Vector3f velocity = new Vector3f(0, 0, 0);
+    @Getter
     private final Camera camera;
     private final World world;
+    @Getter
     private boolean onGround = false;
 
     public Player(World world, Camera camera) {
         this.world = world;
         this.camera = camera;
     }
-
-    public Camera getCamera() {
-        return camera;
-    }
-
-    public Vector3f getPosition() { return position; }
-    public Vector3f getVelocity() { return velocity; }
-    public boolean isOnGround() { return onGround; }
 
     public void setPosition(float x, float y, float z) { synchronized (this) { position.set(x, y, z); } }
 

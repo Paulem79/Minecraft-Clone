@@ -46,7 +46,7 @@ public class MC {
     private boolean leftMousePressed = false;
     private boolean rightMousePressed = false;
     private long lastBlockActionTime = 0;
-    private static final long BLOCK_ACTION_COOLDOWN = 250; // millisecondes
+    private static final long BLOCK_ACTION_COOLDOWN = 0; // millisecondes
 
     // Physics executor for player movement on a separate thread
     private ExecutorService physicsExec;
@@ -164,14 +164,14 @@ public class MC {
             // Détection des changements d'état des boutons de souris
             if (currentLeftMouse && !leftMousePressed) {
                 leftMousePressed = true;
-                handleBlockBreak();
+                handleBlockBreak(getPlayer());
             } else if (!currentLeftMouse && leftMousePressed) {
                 leftMousePressed = false;
             }
 
             if (currentRightMouse && !rightMousePressed) {
                 rightMousePressed = true;
-                handleBlockPlace();
+                handleBlockPlace(getPlayer());
             } else if (!currentRightMouse && rightMousePressed) {
                 rightMousePressed = false;
             }
@@ -374,7 +374,7 @@ public class MC {
     }
 
     // Méthode pour casser un bloc
-    private void handleBlockBreak() {
+    private void handleBlockBreak(Player player) {
         long currentTime = System.currentTimeMillis();
         if (currentTime - lastBlockActionTime < BLOCK_ACTION_COOLDOWN) {
             return;  // Évite les actions trop rapides
@@ -389,7 +389,7 @@ public class MC {
     }
 
     // Méthode pour poser un bloc
-    private void handleBlockPlace() {
+    private void handleBlockPlace(Player player) {
         long currentTime = System.currentTimeMillis();
         if (currentTime - lastBlockActionTime < BLOCK_ACTION_COOLDOWN) {
             return;  // Évite les actions trop rapides
@@ -414,7 +414,7 @@ public class MC {
             }
 
             // Vérifier si le nouveau bloc ne collisionne pas avec le joueur
-            Vector3f playerPos = player.getPosition();
+            Vector3f playerPos = this.player.getPosition();
             float playerMinX = playerPos.x - Player.WIDTH/2;
             float playerMaxX = playerPos.x + Player.WIDTH/2;
             float playerMinY = playerPos.y;
@@ -422,10 +422,10 @@ public class MC {
             float playerMinZ = playerPos.z - Player.DEPTH/2;
             float playerMaxZ = playerPos.z + Player.DEPTH/2;
 
-            // Si le bloc se trouve dans l'espace occupé par le joueur, ne pas le placer
-            if (newX >= playerMinX && newX <= playerMaxX &&
-                newY >= playerMinY && newY <= playerMaxY &&
-                newZ >= playerMinZ && newZ <= playerMaxZ) {
+            // Vérifier si le nouveau bloc ne collisionne pas avec le joueur (AABB complet)
+            if (newX + 1 > playerMinX && newX < playerMaxX &&
+                    newY + 1 > playerMinY && newY < playerMaxY &&
+                    newZ + 1 > playerMinZ && newZ < playerMaxZ) {
                 return;
             }
 
