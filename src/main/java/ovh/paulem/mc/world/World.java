@@ -224,11 +224,15 @@ public class World {
         int pcx = Math.floorDiv((int)Math.floor(playerX), Chunk.CHUNK_X);
         int pcz = Math.floorDiv((int)Math.floor(playerZ), Chunk.CHUNK_Z);
 
+        getLightEngine().processLightQueue();
+
         // Assurez-vous que les chunks autour du joueur sont chargés
         ensureChunksAround(pcx, pcz, Values.RENDER_RADIUS);
 
         // Décharge les chunks éloignés et sauvegarde les chunks modifiés
         unloadDistantChunks(pcx, pcz);
+
+        getLightEngine().processLightQueue();
     }
 
     private void ensureChunksAround(int centerCx, int centerCz, int radius) {
@@ -337,6 +341,16 @@ public class World {
             chunkExecutor.shutdownNow();
             Thread.currentThread().interrupt();
         }
+
+        getLightEngine().getLightExecutor().shutdown();
+        try {
+            if (!getLightEngine().getLightExecutor().awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                getLightEngine().getLightExecutor().shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            getLightEngine().getLightExecutor().shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     public void setBlock(int x, int y, int z, Block block) {
@@ -353,7 +367,6 @@ public class World {
             chunk.setBlock(localX, y, localZ, block);
 
             // --- Mise à jour dynamique de la lumière ---
-            lightEngine.propagateLight(chunk);
             lightEngine.propagateSkyLight(chunk);
             chunk.markDirty();
             // --- Fin lumière dynamique ---

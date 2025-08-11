@@ -20,7 +20,7 @@ public class LightEngine {
     @Getter
     private final ExecutorService lightExecutor = Executors.newFixedThreadPool(Math.max(1, Runtime.getRuntime().availableProcessors() / 2));
     // Budget de chunks à traiter par frame
-    private final int lightPerFrameBudget = 2;
+    private final int lightPerFrameBudget = 5;
 
     public LightEngine() {
         // Initialisation du moteur de lumière
@@ -102,11 +102,6 @@ public class LightEngine {
                 }
             }
         }
-    }
-
-    // Méthode pour propager la lumière dans un chunk
-    public void propagateLight(Chunk chunk) {
-        enqueueLightUpdate(chunk);
     }
 
     // Propagation améliorée de la lumière du ciel (lumière du soleil)
