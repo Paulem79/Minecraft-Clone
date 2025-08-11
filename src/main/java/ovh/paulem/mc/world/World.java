@@ -352,6 +352,12 @@ public class World {
             // Modifier le bloc
             chunk.setBlock(localX, y, localZ, block);
 
+            // --- Mise à jour dynamique de la lumière ---
+            lightEngine.propagateLight(chunk);
+            lightEngine.propagateSkyLight(chunk);
+            chunk.markDirty();
+            // --- Fin lumière dynamique ---
+
             // Vérifier si le bloc est à la bordure d'un chunk et mettre à jour les chunks voisins
             if (localX == 0) {
                 // Bloc à la bordure -X, mettre à jour le chunk à gauche

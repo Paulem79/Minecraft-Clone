@@ -60,6 +60,10 @@ public class Chunk {
         world.getLightEngine().propagateSkyLight(this);
     }
 
+    public void markDirty() {
+        dirty = true;
+    }
+
     public void markClean() {
         dirty = false;
     }
