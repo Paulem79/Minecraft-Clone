@@ -1,24 +1,64 @@
 package ovh.paulem.mc.engine.render.light;
 
+import lombok.Getter;
 import ovh.paulem.mc.world.Chunk;
 import java.util.ArrayDeque;
 import java.util.Queue;
+import java.util.concurrent.*;
+import java.util.Set;
+import java.util.HashSet;
 
 public class LightEngine {
     // Taille maximale de la lumière (0 = obscurité, 15 = lumière maximale)
     public static final int MAX_LIGHT = 15;
 
+    // File d'attente des chunks à éclairer
+    private final Queue<Chunk> lightQueue = new ArrayDeque<>();
+    // Chunks déjà en cours de traitement pour éviter les doublons
+    private final Set<Chunk> processing = new HashSet<>();
+    // Thread pool pour la lumière
+    @Getter
+    private final ExecutorService lightExecutor = Executors.newFixedThreadPool(Math.max(1, Runtime.getRuntime().availableProcessors() / 2));
+    // Budget de chunks à traiter par frame
+    private final int lightPerFrameBudget = 2;
+
     public LightEngine() {
         // Initialisation du moteur de lumière
     }
 
-    // Méthode pour propager la lumière dans un chunk
-    public void propagateLight(Chunk chunk) {
-        // À implémenter : propagation de la lumière
+    public void enqueueLightUpdate(Chunk chunk) {
+        synchronized (lightQueue) {
+            if (!processing.contains(chunk)) {
+                lightQueue.add(chunk);
+                processing.add(chunk);
+            }
+        }
     }
 
-    // Propagation améliorée de la lumière du ciel (lumière du soleil)
-    public void propagateSkyLight(Chunk chunk) {
+    // À appeler à chaque frame (depuis World ou Render)
+    public void processLightQueue() {
+        int processed = 0;
+        while (processed < lightPerFrameBudget) {
+            Chunk chunk;
+            synchronized (lightQueue) {
+                chunk = lightQueue.poll();
+                if (chunk == null) break;
+            }
+            lightExecutor.submit(() -> {
+                try {
+                    propagateSkyLightSync(chunk);
+                } finally {
+                    synchronized (lightQueue) {
+                        processing.remove(chunk);
+                    }
+                }
+            });
+            processed++;
+        }
+    }
+
+    // Appel synchrone (interne, ne pas utiliser directement)
+    private void propagateSkyLightSync(Chunk chunk) {
         // 1. Propagation verticale (remplir la colonne d'air)
         byte[][][] skyLight = new byte[Chunk.CHUNK_X][Chunk.CHUNK_Y][Chunk.CHUNK_Z];
         Queue<int[]> queue = new ArrayDeque<>();
@@ -62,6 +102,16 @@ public class LightEngine {
                 }
             }
         }
+    }
+
+    // Méthode pour propager la lumière dans un chunk
+    public void propagateLight(Chunk chunk) {
+        enqueueLightUpdate(chunk);
+    }
+
+    // Propagation améliorée de la lumière du ciel (lumière du soleil)
+    public void propagateSkyLight(Chunk chunk) {
+        enqueueLightUpdate(chunk);
     }
 
     // Détermine si un bloc est opaque (à adapter selon vos types de blocs)
