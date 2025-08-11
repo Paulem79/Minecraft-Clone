@@ -13,7 +13,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -47,7 +47,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v5
         with:
           name: ubuntu-latest-build-artifacts
