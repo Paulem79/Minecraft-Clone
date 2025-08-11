@@ -25,7 +25,8 @@ public class Chunk {
     @Getter
     private volatile boolean dirty = false;
 
-    private final byte[][][] lightLevels = new byte[CHUNK_X][CHUNK_Y][CHUNK_Z];
+    // Remplace l'ancien stockage 3D par un tableau 1D compacté (4 bits par bloc)
+    private final byte[] lightLevels = new byte[(CHUNK_X * CHUNK_Y * CHUNK_Z + 1) / 2];
 
     public Chunk(World world, int originX, int originZ) {
         this.world = world;
@@ -69,15 +70,34 @@ public class Chunk {
         dirty = false;
     }
 
-    public byte getLightLevel(Vector3f coords) {
-        return getLightLevel((int) coords.x, (int) coords.y, (int) coords.z);
+    private int getIndex(int x, int y, int z) {
+        return x + CHUNK_X * (z + CHUNK_Z * y);
     }
 
     public byte getLightLevel(int x, int y, int z) {
-        return lightLevels[org.joml.Math.clamp(0, Chunk.CHUNK_X-1, x)][y][org.joml.Math.clamp(0, Chunk.CHUNK_Z-1, z)];
+        x = org.joml.Math.clamp(0, CHUNK_X-1, x);
+        y = org.joml.Math.clamp(0, CHUNK_Y-1, y);
+        z = org.joml.Math.clamp(0, CHUNK_Z-1, z);
+        int index = getIndex(x, y, z);
+        int byteIndex = index / 2;
+        boolean highNibble = (index % 2) == 0;
+        byte b = lightLevels[byteIndex];
+        return (byte) (highNibble ? (b >> 4) & 0xF : b & 0xF);
     }
 
     public void setLightLevel(int x, int y, int z, byte level) {
-        lightLevels[x][y][z] = level;
+        x = org.joml.Math.clamp(0, CHUNK_X-1, x);
+        y = org.joml.Math.clamp(0, CHUNK_Y-1, y);
+        z = org.joml.Math.clamp(0, CHUNK_Z-1, z);
+        int index = getIndex(x, y, z);
+        int byteIndex = index / 2;
+        boolean highNibble = (index % 2) == 0;
+        byte b = lightLevels[byteIndex];
+        if (highNibble) {
+            b = (byte) ((b & 0x0F) | ((level & 0xF) << 4));
+        } else {
+            b = (byte) ((b & 0xF0) | (level & 0xF));
+        }
+        lightLevels[byteIndex] = b;
     }
 }

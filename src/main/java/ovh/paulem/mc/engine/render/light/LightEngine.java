@@ -60,7 +60,6 @@ public class LightEngine {
     // Appel synchrone (interne, ne pas utiliser directement)
     private void propagateSkyLightSync(Chunk chunk) {
         // 1. Propagation verticale (remplir la colonne d'air)
-        byte[][][] skyLight = new byte[Chunk.CHUNK_X][Chunk.CHUNK_Y][Chunk.CHUNK_Z];
         Queue<int[]> queue = new ArrayDeque<>();
         for (int x = 0; x < Chunk.CHUNK_X; x++) {
             for (int z = 0; z < Chunk.CHUNK_Z; z++) {
@@ -70,7 +69,6 @@ public class LightEngine {
                     if (isOpaque(blockId)) {
                         light = 0;
                     }
-                    skyLight[x][y][z] = (byte) light;
                     chunk.setLightLevel(x, y, z, (byte) light);
                     if (light > 0 && !isOpaque(blockId)) {
                         // Ajouter à la file pour la propagation horizontale
@@ -79,12 +77,13 @@ public class LightEngine {
                 }
             }
         }
+
         // 2. Propagation horizontale (BFS)
         int[][] dirs = {{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
         while (!queue.isEmpty()) {
             int[] pos = queue.poll();
             int x = pos[0], y = pos[1], z = pos[2];
-            byte current = skyLight[x][y][z];
+            byte current = chunk.getLightLevel(x, y, z);
             for (int[] d : dirs) {
                 int nx = x + d[0];
                 int ny = y + d[1];
@@ -93,10 +92,9 @@ public class LightEngine {
                     continue;
                 int neighborId = chunk.getBlockId(nx, ny, nz);
                 if (isOpaque(neighborId)) continue;
-                byte neighborLight = skyLight[nx][ny][nz];
+                byte neighborLight = chunk.getLightLevel(nx, ny, nz);
                 int newLight = (d[1] == -1) ? current : current - 1; // vers le bas : pas d'atténuation
                 if (newLight > 0 && neighborLight < newLight) {
-                    skyLight[nx][ny][nz] = (byte) newLight;
                     chunk.setLightLevel(nx, ny, nz, (byte) newLight);
                     queue.add(new int[]{nx, ny, nz});
                 }
