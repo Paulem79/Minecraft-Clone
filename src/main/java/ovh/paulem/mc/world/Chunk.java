@@ -16,7 +16,8 @@ public class Chunk {
     private final int originX;
     @Getter
     private final int originZ;
-    private final int[][][] blocks = new int[CHUNK_X][CHUNK_Y][CHUNK_Z];
+    // Remplace blocks[x][y][z] par un tableau 1D pour de meilleures performances
+    private final int[] blocks = new int[CHUNK_X * CHUNK_Y * CHUNK_Z];
     // Version increments when the chunk's block data is updated (e.g., generation complete)
     @Getter
     private volatile int version = 0;
@@ -34,12 +35,21 @@ public class Chunk {
         this.originZ = originZ;
     }
 
-    public int getBlockId(int x, int y, int z) { return blocks[x][y][z]; }
-    public Block getBlock(int x, int y, int z) { return Blocks.blocks.get(getBlockId(x, y, z)); }
+    private int getIndex(int x, int y, int z) {
+        return x + CHUNK_X * (z + CHUNK_Z * y);
+    }
+
+    public int getBlockId(int x, int y, int z) {
+        return blocks[getIndex(x, y, z)];
+    }
+    public Block getBlock(int x, int y, int z) {
+        return Blocks.blocks.get(getBlockId(x, y, z));
+    }
 
     public void setBlockId(int x, int y, int z, int id) {
-        if (blocks[x][y][z] != id) {
-            blocks[x][y][z] = id;
+        int idx = getIndex(x, y, z);
+        if (blocks[idx] != id) {
+            blocks[idx] = id;
             bumpVersion(); // Incrémenter la version pour déclencher la reconstruction du mesh
         }
     }
@@ -68,10 +78,6 @@ public class Chunk {
 
     public void markClean() {
         dirty = false;
-    }
-
-    private int getIndex(int x, int y, int z) {
-        return x + CHUNK_X * (z + CHUNK_Z * y);
     }
 
     public byte getLightLevel(int x, int y, int z) {
