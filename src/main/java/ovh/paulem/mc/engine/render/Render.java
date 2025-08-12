@@ -168,7 +168,8 @@ public class Render {
                         List<MeshBatch> batches = buildMeshBatchesFromRaw(result.raw);
                         meshCache.put(entry.getKey(), new ChunkMesh(batches, result.greedy, result.version));
                     } catch (Exception e) {
-                        e.printStackTrace();
+                        // Remplacer par un logger si besoin
+                        System.err.println("Erreur lors de la génération du mesh : " + e.getMessage());
                     }
                     it.remove();
                 }
