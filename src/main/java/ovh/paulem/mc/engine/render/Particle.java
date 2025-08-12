@@ -7,7 +7,6 @@ import ovh.paulem.mc.world.World;
 public class Particle {
     public Vector3f position;
     public Vector3f velocity;
-    public Vector3f color;
     public float life;
     public float size;
     public String texturePath;
@@ -15,10 +14,9 @@ public class Particle {
     public float vOffset;
     public float lightLevel = 1.0f;
 
-    public Particle(Vector3f position, Vector3f velocity, Vector3f color, float life, float size, String texturePath, float uOffset, float vOffset) {
+    public Particle(Vector3f position, Vector3f velocity, float life, float size, String texturePath, float uOffset, float vOffset) {
         this.position = new Vector3f(position);
         this.velocity = new Vector3f(velocity);
-        this.color = new Vector3f(color);
         this.life = life;
         this.size = size * 100f;
         this.texturePath = texturePath;

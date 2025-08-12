@@ -6,9 +6,11 @@ layout(location = 3) in float inLightLevel;
 
 uniform mat4 projection;
 uniform mat4 view;
+uniform vec2 uvOffset;
 
 out vec3 fragColor;
 out float fragLightLevel;
+out vec2 vUV;
 
 void main() {
     vec4 pos = projection * view * vec4(inPosition, 1.0);
@@ -17,4 +19,5 @@ void main() {
     gl_PointSize = inSize / pos.w;
     fragColor = inColor;
     fragLightLevel = inLightLevel;
+    vUV = uvOffset;
 }

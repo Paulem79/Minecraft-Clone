@@ -2,6 +2,7 @@
 
 in vec2 TexCoord;
 in float LightLevel;
+in vec3 BiomeColor; // couleur du biome par sommet (injectée par le vertex shader)
 
 out vec4 FragColor;
 
@@ -9,8 +10,6 @@ uniform sampler2D textureSampler;
 uniform sampler2D overlaySampler; // used when mode==2
 // Modes: 0=default, 1=grassTint, 2=overlayWithTint, 3=foliageTint
 uniform int mode;
-uniform vec3 biomeGrassColor;     // tint color for grass in current biome
-uniform vec3 biomeFoliageColor;   // tint color for leaves in current biome
 
 void main()
 {
@@ -21,18 +20,20 @@ void main()
         discard;
 
     vec3 color = base.rgb;
+    vec3 tint = BiomeColor;
 
     if (mode == 1) {
-        // Tint grass top by biome grass color
-        color *= biomeGrassColor;
+        // Tint grass top by couleur sommet
+        color *= tint;
     } else if (mode == 2) {
         // Blend base with overlay tinted by biome color
         vec4 overlay = texture(overlaySampler, TexCoord);
-        vec3 tintedOverlay = overlay.rgb * biomeGrassColor;
+        vec3 tintedOverlay = overlay.rgb * tint;
         color = mix(color, tintedOverlay, overlay.a);
     } else if (mode == 3) {
-        // Tint foliage (leaves) by biome foliage color
-        color *= biomeFoliageColor;
+        // Tint foliage (leaves) by couleur sommet
+        vec3 foliageTint = BiomeColor;
+        color *= foliageTint;
     }
 
     // Appliquer la lumière APRÈS tous les blends/tints

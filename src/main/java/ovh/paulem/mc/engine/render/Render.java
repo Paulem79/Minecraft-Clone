@@ -7,6 +7,7 @@ import ovh.paulem.mc.engine.Window;
 import ovh.paulem.mc.engine.render.texture.*;
 import ovh.paulem.mc.math.FastRandom;
 import ovh.paulem.mc.world.Biome;
+import ovh.paulem.mc.world.block.Face;
 import ovh.paulem.mc.world.block.types.Block;
 import ovh.paulem.mc.world.Chunk;
 import ovh.paulem.mc.world.World;
@@ -14,6 +15,7 @@ import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.lwjgl.opengl.GL;
 import ovh.paulem.mc.world.block.Blocks;
+import ovh.paulem.mc.world.block.types.Tintable;
 
 import java.util.*;
 import java.util.concurrent.*;
@@ -133,17 +135,6 @@ public class Render {
         shader.setUniform("textureSampler", 0);
         shader.setUniform("overlaySampler", 1);
 
-        // Set biome colors for the current chunk
-        Biome currentBiome = Biome.NORMAL;
-        shader.setUniform3f("biomeGrassColor",
-                           currentBiome.grassR(),
-                           currentBiome.grassG(),
-                           currentBiome.grassB());
-        shader.setUniform3f("biomeFoliageColor",
-                           currentBiome.foliageR(),
-                           currentBiome.foliageG(),
-                           currentBiome.foliageB());
-
         if (world != null) {
             // Rebuild up to a small number of chunk meshes per frame to avoid spikes
             int rebuilt = 0;
@@ -262,22 +253,35 @@ public class Render {
         }
         for (Map.Entry<String, Map<String, List<Particle>>> texEntry : grouped.entrySet()) {
             String texturePath = texEntry.getKey();
-            Texture tex = Textures.textureCache.get(texturePath);
-            if (tex != null) tex.bind(0);
+            Texture texture = Textures.textureCache.get(texturePath);
+
+            if (texture != null) texture.bind(0);
             for (Map.Entry<String, List<Particle>> offsetEntry : texEntry.getValue().entrySet()) {
                 List<Particle> group = offsetEntry.getValue();
                 if (group.isEmpty()) continue;
                 // Tous les offsets du groupe sont identiques
                 Particle ref = group.get(0);
+
+                boolean isOverlay = false;
+                Vector3f overlayColor = null;
+                if(texture instanceof OverlayTexture overlayTexture) {
+                    isOverlay = true;
+                    overlayColor = world.getBiomeAt((int) ref.position.x, (int) ref.position.z).getByTint(overlayTexture.getOverlay().getTintType());
+                }
+                Vector3f color;
+                if(texture instanceof TintTexture tintTexture) {
+                    color = world.getBiomeAt((int) ref.position.x, (int) ref.position.z).getByTint(tintTexture.getTintType());
+                } else color = new Vector3f(1);
+
                 float[] data = new float[group.size() * 8];
                 int i = 0;
                 for (Particle p : group) {
                     data[i++] = p.position.x;
                     data[i++] = p.position.y;
                     data[i++] = p.position.z;
-                    data[i++] = p.color.x;
-                    data[i++] = p.color.y;
-                    data[i++] = p.color.z;
+                    data[i++] = color.x;
+                    data[i++] = color.y;
+                    data[i++] = color.z;
                     data[i++] = p.size;
                     data[i++] = p.lightLevel;
                 }
@@ -290,6 +294,17 @@ public class Render {
                 particleShader.setUniform("particleTexture", 0);
                 // Offset UV du groupe
                 particleShader.setUniform("uvOffset", ref.uOffset, ref.vOffset);
+                // --- Gestion OverlayTexture ---
+                particleShader.setUniform("isOverlay", isOverlay ? 1 : 0);
+                if (isOverlay) {
+                    particleShader.setUniform("overlayTexture", 1);
+                    // Correction : si overlayColor est blanc, on passe (1,1,1) explicitement
+                    if (overlayColor.x >= 0.999f && overlayColor.y >= 0.999f && overlayColor.z >= 0.999f) {
+                        particleShader.setUniform("overlayColor", 1.0f, 1.0f, 1.0f);
+                    } else {
+                        particleShader.setUniform("overlayColor", overlayColor.x, overlayColor.y, overlayColor.z);
+                    }
+                }
                 glEnable(GL_PROGRAM_POINT_SIZE);
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -305,22 +320,30 @@ public class Render {
         }
     }
 
-    public void spawnBlockParticles(Vector3f position, Block block) {
-        String texturePath = block.getFaceTextureName(0); // Face 0 = face principale
-        for (int i = 0; i < 128; i++) {
-            Vector3f vel = new Vector3f((float)Math.random()-0.5f, (float)Math.random(), (float)Math.random()-0.5f).mul(2f);
-            float size = 0.08f + (float)Math.random()*0.07f; // Particules plus petites
-            float life = 5.0f; // 5 secondes pour debug
-            // Coordonnées UV aléatoires pour un "bout" de texture
-            float uOffset = (float)Math.random();
-            float vOffset = (float)Math.random();
-            // Couleur blanche (sera ignorée si la texture est utilisée)
-            Vector3f color = new Vector3f(1, 1, 1);
+    private final int particleCount = 256;
+    private final Face[] faces = new Face[]{Face.POS_Y, Face.POS_X, Face.NEG_Y};
+    private final int perFaceCount = particleCount / faces.length;
 
-            float randomX = FastRandom.INSTANCE.nextFloat(-0.25f, 0.25f);
-            float randomY = FastRandom.INSTANCE.nextFloat(-0.25f, 0.25f);
-            float randomZ = FastRandom.INSTANCE.nextFloat(-0.25f, 0.25f);
-            particleSystem.addParticle(new Particle(new Vector3f(position).add(randomX, randomY, randomZ), vel, color, life, size, texturePath, uOffset, vOffset));
+    public void spawnBlockParticles(Vector3f position, Block block) {
+
+        for (Face face : faces) {
+            String texturePath = block.getFaceTextureName(face);
+
+            for (int i = 0; i < perFaceCount; i++) {
+                float velOffsetXZ = 0.5f;
+                float velOffsetY = 0.5f;
+                Vector3f vel = new Vector3f((float)Math.random()-velOffsetXZ, (float)Math.random()+velOffsetY, (float)Math.random()-velOffsetXZ).mul(2f);
+                float size = 0.08f + (float)Math.random()*0.07f; // Particules plus petites
+                float life = 5.0f; // 5 secondes pour debug
+                // Coordonnées UV aléatoires pour un "bout" de texture
+                float uOffset = (float)Math.random();
+                float vOffset = (float)Math.random();
+
+                float randomX = FastRandom.INSTANCE.nextFloat(-0.4f, 0.4f);
+                float randomY = FastRandom.INSTANCE.nextFloat(-0.4f, 0.4f);
+                float randomZ = FastRandom.INSTANCE.nextFloat(-0.4f, 0.4f);
+                particleSystem.addParticle(new Particle(new Vector3f(position).add(randomX, randomY, randomZ), vel, life, size, texturePath, uOffset, vOffset));
+            }
         }
     }
 
@@ -462,7 +485,46 @@ public class Render {
                         // Emit one quad for this merged rect
                         Acc acc = accs.computeIfAbsent(tex, k -> new Acc());
                         // Convert (u..u+width, v..v+height, w) back to block-space rect corners for face f
-                        // We will generate a quad with 4 corners in 3D depending on face and ensure CCW winding for outside
+                        // On va générer un quad avec 4 coins en 3D selon la face et garantir le winding CCW
+                        float[] biomeColor = new float[]{-1f, -1f, -1f};
+                        Block blkForBiome;
+                        switch (f) {
+                            case 0: case 1: // X faces
+                                blkForBiome = chunk.getBlock(w, v, u);
+                                break;
+                            case 2: case 3: // Y faces
+                                blkForBiome = chunk.getBlock(u, w, v);
+                                break;
+                            default: // Z faces
+                                blkForBiome = chunk.getBlock(u, v, w);
+                                break;
+                        }
+                        // Appliquer la couleur biome si overlay grass_block_side_overlay ou face top (greedy ou non-greedy)
+                        if (blkForBiome instanceof Tintable tintable) {
+                            if (world != null) {
+                                int wx, wz;
+                                wz = switch (f) {
+                                    case 0, 1 -> {
+                                        wx = chunk.getOriginX() + w;
+                                        yield chunk.getOriginZ() + u;
+                                    }
+                                    case 2, 3 -> {
+                                        wx = chunk.getOriginX() + u;
+                                        yield chunk.getOriginZ() + v;
+                                    }
+                                    default -> {
+                                        wx = chunk.getOriginX() + u;
+                                        yield chunk.getOriginZ() + w;
+                                    }
+                                };
+                                Biome biome = world.getBiomeAt(wx, wz);
+                                Vector3f color = biome.getByTint(tintable.getTintType());
+                                biomeColor = new float[]{
+                                        color.x, color.y, color.z
+                                };
+                            }
+                        }
+                        // Génération des quads selon la face
                         switch (f) {
                             case 0: { // +X at x=w, u=z, v=y
                                 float x0 = w + 1; // face sits at +X side
@@ -476,7 +538,7 @@ public class Render {
                                 };
                                 addQuad(acc.verts, acc.inds,
                                         new float[]{x0, (float) v, z1}, new float[]{x0, (float) v, (float) u}, new float[]{x0, y1, (float) u}, new float[]{x0, y1, z1},
-                                        normal, acc.indexOffset, lightLevels);
+                                        normal, acc.indexOffset, lightLevels, biomeColor);
                                 acc.indexOffset += 4;
                                 break; }
                             case 1: { // -X at x=w, u=z, v=y
@@ -491,7 +553,7 @@ public class Render {
                                 };
                                 addQuad(acc.verts, acc.inds,
                                         new float[]{(float) w, (float) v, (float) u}, new float[]{(float) w, (float) v, z1}, new float[]{(float) w, y1, z1}, new float[]{(float) w, y1, (float) u},
-                                        normal, acc.indexOffset, lightLevels);
+                                        normal, acc.indexOffset, lightLevels, biomeColor);
                                 acc.indexOffset += 4;
                                 break; }
                             case 2: { // +Y at y=w, u=x, v=z
@@ -506,7 +568,7 @@ public class Render {
                                 };
                                 addQuad(acc.verts, acc.inds,
                                         new float[]{(float) u, y0, (float) v}, new float[]{(float) u, y0, z1}, new float[]{x1, y0, z1}, new float[]{x1, y0, (float) v},
-                                        normal, acc.indexOffset, lightLevels);
+                                        normal, acc.indexOffset, lightLevels, biomeColor);
                                 acc.indexOffset += 4;
                                 break; }
                             case 3: { // -Y at y=w, u=x, v=z
@@ -521,7 +583,7 @@ public class Render {
                                 };
                                 addQuad(acc.verts, acc.inds,
                                         new float[]{(float) u, (float) w, (float) v}, new float[]{x1, (float) w, (float) v}, new float[]{x1, (float) w, z1}, new float[]{(float) u, (float) w, z1},
-                                        normal, acc.indexOffset, lightLevels);
+                                        normal, acc.indexOffset, lightLevels, biomeColor);
                                 acc.indexOffset += 4;
                                 break; }
                             case 4: { // +Z at z=w, u=x, v=y
@@ -536,7 +598,7 @@ public class Render {
                                 };
                                 addQuad(acc.verts, acc.inds,
                                         new float[]{(float) u, (float) v, z0}, new float[]{x1, (float) v, z0}, new float[]{x1, y1, z0}, new float[]{(float) u, y1, z0},
-                                        normal, acc.indexOffset, lightLevels);
+                                        normal, acc.indexOffset, lightLevels, biomeColor);
                                 acc.indexOffset += 4;
                                 break; }
                             default: { // 5: -Z at z=w, u=x, v=y
@@ -551,7 +613,7 @@ public class Render {
                                 };
                                 addQuad(acc.verts, acc.inds,
                                         new float[]{x1, (float) v, (float) w}, new float[]{(float) u, (float) v, (float) w}, new float[]{(float) u, y1, (float) w}, new float[]{x1, y1, (float) w},
-                                        normal, acc.indexOffset, lightLevels);
+                                        normal, acc.indexOffset, lightLevels, biomeColor);
                                 acc.indexOffset += 4;
                                 break; }
                         }
@@ -596,7 +658,6 @@ public class Render {
                         if (neighborSolid) continue;
                         String texName = block.getFaceTextureName(f);
                         Acc acc = accs.computeIfAbsent(texName, k -> new Acc());
-                        // Calcul des niveaux de lumière pour chaque coin de la face
                         float[] lightLevels = switch (f) {
                             case 0 -> new float[]{
                                 safeGetLightLevel(chunk, x + 1, y, z + 1),
@@ -635,7 +696,13 @@ public class Render {
                                 safeGetLightLevel(chunk, x + 1, y + 1, z)
                             };
                         };
-                        addFace(acc.verts, acc.inds, x, y, z, f, NORMALS[f], acc.indexOffset, lightLevels);
+                        // --- Ajout couleur biome pour tintable ---
+                        if (block instanceof Tintable tintable) {
+                            Biome biome = world.getBiomeAt(wx, wz);
+                            addFace(acc.verts, acc.inds, x, y, z, f, NORMALS[f], acc.indexOffset, lightLevels, biome.getByTint(tintable.getTintType()));
+                        } else {
+                            addFace(acc.verts, acc.inds, x, y, z, f, NORMALS[f], acc.indexOffset, lightLevels, Biome.NORMAL.getByTint(TintType.GRASS));
+                        }
                         acc.indexOffset += 4;
                     }
                 }
@@ -666,9 +733,8 @@ public class Render {
         return convertAccsToRawMeshData(accs);
     }
 
-    // --- Ajout des méthodes utilitaires manquantes ---
-    // Ajoute un quad à la liste des vertex et indices, avec la lumière par sommet
-    private static void addQuad(List<Float> verts, List<Integer> inds, float[] c0, float[] c1, float[] c2, float[] c3, Vector3f normal, int indexOffset, float[] lightLevels) {
+    // Ajoute un quad à la liste des vertex et indices, AVEC couleur biome
+    private static void addQuad(List<Float> verts, List<Integer> inds, float[] c0, float[] c1, float[] c2, float[] c3, Vector3f normal, int indexOffset, float[] lightLevels, float[] biomeColor) {
         float[][] uvs = new float[][]{{0,0},{1,0},{1,1},{0,1}};
         float[][] corners = new float[][]{c0, c1, c2, c3};
         for (int i = 0; i < 4; i++) {
@@ -676,14 +742,15 @@ public class Render {
             verts.add(c[0]); verts.add(c[1]); verts.add(c[2]);
             verts.add(uvs[i][0]); verts.add(uvs[i][1]);
             verts.add(normal.x); verts.add(normal.y); verts.add(normal.z);
-            verts.add(lightLevels[i]); // Ajout du niveau de lumière
+            verts.add(lightLevels[i]);
+            verts.add(biomeColor[0]); verts.add(biomeColor[1]); verts.add(biomeColor[2]);
         }
         inds.add(indexOffset); inds.add(indexOffset + 1); inds.add(indexOffset + 2);
         inds.add(indexOffset + 2); inds.add(indexOffset + 3); inds.add(indexOffset);
     }
 
     // Ajoute une face de cube à la liste
-    private static void addFace(List<Float> verts, List<Integer> inds, int x, int y, int z, int f, Vector3f normal, int indexOffset, float[] lightLevels) {
+    private static void addFace(List<Float> verts, List<Integer> inds, int x, int y, int z, int f, Vector3f normal, int indexOffset, float[] lightLevels, Vector3f biomeColor) {
         float[][] corners = switch (f) {
             case 0 ->
                     new float[][]{{(float) x + 1, (float) y, (float) z + 1}, {(float) x + 1, (float) y, (float) z}, {(float) x + 1, (float) y + 1, (float) z}, {(float) x + 1, (float) y + 1, (float) z + 1}};
@@ -698,7 +765,18 @@ public class Render {
             default ->
                     new float[][]{{(float) x + 1, (float) y, (float) z}, {(float) x, (float) y, (float) z}, {(float) x, (float) y + 1, (float) z}, {(float) x + 1, (float) y + 1, (float) z}};
         };
-        addQuad(verts, inds, corners[0], corners[1], corners[2], corners[3], normal, indexOffset, lightLevels);
+        float[] color = new float[]{biomeColor.x, biomeColor.y, biomeColor.z}; // Couleur du biome
+        float[][] uvs = new float[][]{{0,0},{1,0},{1,1},{0,1}};
+        for (int i = 0; i < 4; i++) {
+            float[] c = corners[i];
+            verts.add(c[0]); verts.add(c[1]); verts.add(c[2]);
+            verts.add(uvs[i][0]); verts.add(uvs[i][1]);
+            verts.add(normal.x); verts.add(normal.y); verts.add(normal.z);
+            verts.add(lightLevels[i]);
+            verts.add(color[0]); verts.add(color[1]); verts.add(color[2]); // couleur biome ou -1
+        }
+        inds.add(indexOffset); inds.add(indexOffset + 1); inds.add(indexOffset + 2);
+        inds.add(indexOffset + 2); inds.add(indexOffset + 3); inds.add(indexOffset);
     }
 
     // Utilitaire pour éviter les ArrayIndexOutOfBounds lors de l'accès à la lumière
