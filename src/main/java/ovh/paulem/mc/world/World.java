@@ -116,11 +116,14 @@ public class World {
     private void generateChunk(Chunk chunk, int cx, int cz) {
         final int baseX = chunk.getOriginX();
         final int baseZ = chunk.getOriginZ();
-        for (int x = 0; x < Chunk.CHUNK_X; x++) {
-            for (int z = 0; z < Chunk.CHUNK_Z; z++) {
+        // Optimisation : pré-calcule le bruit de biome et les paramètres pour chaque (x, z)
+        final int sizeX = Chunk.CHUNK_X;
+        final int sizeZ = Chunk.CHUNK_Z;
+        BiomeParams[][] biomeParamsCache = new BiomeParams[sizeX][sizeZ];
+        for (int x = 0; x < sizeX; x++) {
+            for (int z = 0; z < sizeZ; z++) {
                 int wxInt = baseX + x;
                 int wzInt = baseZ + z;
-                // Lissage du bruit de biome (moyenne 3x3)
                 double bSum = 0.0;
                 int bCount = 0;
                 for (int dx = -1; dx <= 1; dx++) {
@@ -130,28 +133,35 @@ public class World {
                     }
                 }
                 double b = bSum / bCount;
-                // Interpolation des paramètres selon le bruit de biome lissé
-                BiomeParams params;
                 if (b <= -0.35) {
-                    params = new BiomeParams(
+                    biomeParamsCache[x][z] = new BiomeParams(
                         Biome.PLAINS.relief, Biome.PLAINS.baseHeight, Biome.PLAINS.heightScale, Biome.PLAINS.octaves, Biome.PLAINS.terrainFrequency);
                 } else if (b >= 0.35) {
-                    params = new BiomeParams(
+                    biomeParamsCache[x][z] = new BiomeParams(
                         Biome.MOUNTAINS.relief, Biome.MOUNTAINS.baseHeight, Biome.MOUNTAINS.heightScale, Biome.MOUNTAINS.octaves, Biome.MOUNTAINS.terrainFrequency);
                 } else if (b < 0) {
                     double t = (b + 0.35) / 0.35;
-                    params = interpolateBiome(Biome.PLAINS, Biome.NORMAL, t);
+                    biomeParamsCache[x][z] = interpolateBiome(Biome.PLAINS, Biome.NORMAL, t);
                 } else {
                     double t = b / 0.35;
-                    params = interpolateBiome(Biome.NORMAL, Biome.MOUNTAINS, t);
+                    biomeParamsCache[x][z] = interpolateBiome(Biome.NORMAL, Biome.MOUNTAINS, t);
                 }
+            }
+        }
+        // Génération de la surface
+        for (int x = 0; x < sizeX; x++) {
+            for (int z = 0; z < sizeZ; z++) {
+                int wxInt = baseX + x;
+                int wzInt = baseZ + z;
+                BiomeParams params = biomeParamsCache[x][z];
                 double wx = wxInt * 0.05 * params.terrainFrequency;
                 double wz = wzInt * 0.05 * params.terrainFrequency;
                 double amp = 1.0;
                 double freq = 1.0;
                 double sum = 0.0;
                 double ampSum = 0.0;
-                for (int o = 0; o < (int)params.octaves; o++) {
+                int octaves = (int) params.octaves;
+                for (int o = 0; o < octaves; o++) {
                     sum += noise.noise(wx * freq, wz * freq) * amp;
                     ampSum += amp;
                     amp *= 0.5;
@@ -172,53 +182,26 @@ public class World {
                 }
             }
         }
-
-        // Génération des caves
-        for (int x = 0; x < Chunk.CHUNK_X; x++) {
-            for (int z = 0; z < Chunk.CHUNK_Z; z++) {
-                int wxInt = baseX + x;
-                int wzInt = baseZ + z;
-                // Récupère les paramètres du biome pour ce point
-                double bSum = 0.0;
-                int bCount = 0;
-                for (int dx = -1; dx <= 1; dx++) {
-                    for (int dz = -1; dz <= 1; dz++) {
-                        bSum += biomeNoise.noise((wxInt + dx) * 0.003, (wzInt + dz) * 0.003);
-                        bCount++;
-                    }
-                }
-                double b = bSum / bCount;
-                BiomeParams params;
-                if (b <= -0.35) {
-                    params = new BiomeParams(
-                        Biome.PLAINS.relief, Biome.PLAINS.baseHeight, Biome.PLAINS.heightScale, Biome.PLAINS.octaves, Biome.PLAINS.terrainFrequency);
-                } else if (b >= 0.35) {
-                    params = new BiomeParams(
-                        Biome.MOUNTAINS.relief, Biome.MOUNTAINS.baseHeight, Biome.MOUNTAINS.heightScale, Biome.MOUNTAINS.octaves, Biome.MOUNTAINS.terrainFrequency);
-                } else if (b < 0) {
-                    double t = (b + 0.35) / 0.35;
-                    params = interpolateBiome(Biome.PLAINS, Biome.NORMAL, t);
-                } else {
-                    double t = b / 0.35;
-                    params = interpolateBiome(Biome.NORMAL, Biome.MOUNTAINS, t);
-                }
+        // Génération des caves (réutilise le cache)
+        for (int x = 0; x < sizeX; x++) {
+            for (int z = 0; z < sizeZ; z++) {
+                BiomeParams params = biomeParamsCache[x][z];
+                double caveFreq = 1.0 / (0.7 + params.terrainFrequency * 0.6);
+                double caveAmp = 1.0 + params.relief * 0.2;
+                double wxBase = (baseX + x) * Values.BASE_CAVE_SCALE * caveFreq;
+                double wzBase = (baseZ + z) * Values.BASE_CAVE_SCALE * caveFreq;
+                double wx2Base = (baseX + x) * Values.SIZE_NOISE_SCALE * caveFreq;
+                double wz2Base = (baseZ + z) * Values.SIZE_NOISE_SCALE * caveFreq;
+                double wx3 = (baseX + x) * Values.FLOOR_NOISE_SCALE;
+                double wz3 = (baseZ + z) * Values.FLOOR_NOISE_SCALE;
                 for (int y = Values.MIN_CAVE_HEIGHT; y < Values.MAX_CAVE_HEIGHT; y++) {
                     if (!chunk.getBlock(x, y, z).isBlock()) {
                         continue;
                     }
-                    // On adapte la fréquence et la taille des caves selon le biome
-                    double caveFreq = 1.0 / (0.7 + params.terrainFrequency * 0.6); // montagnes = freq plus basse = caves plus larges
-                    double caveAmp = 1.0 + params.relief * 0.2; // plus de relief = caves plus hautes
-                    double wx = (baseX + x) * Values.BASE_CAVE_SCALE * caveFreq;
                     double wy = y * Values.BASE_CAVE_SCALE * caveAmp;
-                    double wz = (baseZ + z) * Values.BASE_CAVE_SCALE * caveFreq;
-                    double wx2 = (baseX + x) * Values.SIZE_NOISE_SCALE * caveFreq;
                     double wy2 = y * Values.SIZE_NOISE_SCALE * caveAmp;
-                    double wz2 = (baseZ + z) * Values.SIZE_NOISE_SCALE * caveFreq;
-                    double wx3 = (baseX + x) * Values.FLOOR_NOISE_SCALE;
-                    double wz3 = (baseZ + z) * Values.FLOOR_NOISE_SCALE;
-                    double caveValue = caveNoise.noise(wx, wy, wz);
-                    double sizeVariation = caveSizeNoise.noise(wx2, wy2, wz2) * 0.5 + 0.5;
+                    double caveValue = caveNoise.noise(wxBase, wy, wzBase);
+                    double sizeVariation = caveSizeNoise.noise(wx2Base, wy2, wz2Base) * 0.5 + 0.5;
                     double floorVariation = caveFloorNoise.noise(wx3, wz3) * Values.FLOOR_VARIATION_AMPLITUDE;
                     double threshold = Values.CAVE_THRESHOLD;
                     if (y < Values.MIN_CAVE_HEIGHT + Values.TRANSITION_HEIGHT) {
@@ -478,14 +461,8 @@ public class World {
     private static double lerp(double a, double b, double t) {
         return a * (1 - t) + b * t;
     }
-    private static class BiomeParams {
-        final double relief, baseHeight, heightScale, octaves, terrainFrequency;
-        BiomeParams(double relief, double baseHeight, double heightScale, double octaves, double terrainFrequency) {
-            this.relief = relief;
-            this.baseHeight = baseHeight;
-            this.heightScale = heightScale;
-            this.octaves = octaves;
-            this.terrainFrequency = terrainFrequency;
-        }
+
+    private record BiomeParams(double relief, double baseHeight, double heightScale, double octaves,
+                               double terrainFrequency) {
     }
 }
