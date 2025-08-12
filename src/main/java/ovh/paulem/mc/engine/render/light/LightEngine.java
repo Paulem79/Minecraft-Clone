@@ -58,9 +58,9 @@ public class LightEngine {
     // Appel synchrone (interne, ne pas utiliser directement)
     private void propagateSkyLightSync(Chunk chunk) {
         // 1. Propagation verticale (remplir la colonne d'air)
-        Queue<int[]> queue = new ArrayDeque<>();
-        for (int x = 0; x < Chunk.CHUNK_X; x++) {
-            for (int z = 0; z < Chunk.CHUNK_Z; z++) {
+        Queue<byte[]> queue = new ArrayDeque<>();
+        for (byte x = 0; x < Chunk.CHUNK_X; x++) {
+            for (byte z = 0; z < Chunk.CHUNK_Z; z++) {
                 int light = Values.MAX_LIGHT;
                 for (int y = Chunk.CHUNK_Y - 1; y >= 0; y--) {
                     int blockId = chunk.getBlockId(x, y, z);
@@ -70,7 +70,7 @@ public class LightEngine {
                     chunk.setLightLevel(x, y, z, (byte) light);
                     if (light > 0 && !isOpaque(blockId)) {
                         if (queue.size() < MAX_LIGHT_QUEUE_SIZE) {
-                            queue.add(new int[]{x, y, z});
+                            queue.add(new byte[]{x, (byte) y, z});
                         } else {
                             System.err.println("[LightEngine] Limite de queue atteinte lors de la propagation verticale, arrêt de la propagation.");
                             return;
@@ -81,15 +81,15 @@ public class LightEngine {
         }
 
         // 2. Propagation horizontale (BFS)
-        int[][] dirs = {{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
+        byte[][] dirs = {{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
         while (!queue.isEmpty()) {
-            int[] pos = queue.poll();
-            int x = pos[0], y = pos[1], z = pos[2];
+            byte[] pos = queue.poll();
+            byte x = pos[0], y = pos[1], z = pos[2];
             byte current = chunk.getLightLevel(x, y, z);
-            for (int[] d : dirs) {
-                int nx = x + d[0];
-                int ny = y + d[1];
-                int nz = z + d[2];
+            for (byte[] d : dirs) {
+                byte nx = (byte) (x + d[0]);
+                byte ny = (byte) (y + d[1]);
+                byte nz = (byte) (z + d[2]);
                 if (nx < 0 || nx >= Chunk.CHUNK_X || ny < 0 || ny >= Chunk.CHUNK_Y || nz < 0 || nz >= Chunk.CHUNK_Z)
                     continue;
                 int neighborId = chunk.getBlockId(nx, ny, nz);
@@ -99,7 +99,7 @@ public class LightEngine {
                 if (newLight > 0 && neighborLight < newLight) {
                     chunk.setLightLevel(nx, ny, nz, (byte) newLight);
                     if (queue.size() < MAX_LIGHT_QUEUE_SIZE) {
-                        queue.add(new int[]{nx, ny, nz});
+                        queue.add(new byte[]{nx, ny, nz});
                     } else {
                         System.err.println("[LightEngine] Limite de queue atteinte lors de la propagation horizontale, arrêt de la propagation.");
                         return;
