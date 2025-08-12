@@ -3,6 +3,7 @@ package ovh.paulem.mc.engine.render;
 import org.joml.Vector3f;
 import ovh.paulem.mc.world.Chunk;
 import ovh.paulem.mc.world.World;
+import ovh.paulem.mc.world.BaseChunk;
 
 public class Particle {
     public Vector3f position;
@@ -50,12 +51,12 @@ public class Particle {
             int lx = (int)Math.floor(position.x);
             int ly = (int)Math.floor(position.y);
             int lz = (int)Math.floor(position.z);
-            Chunk chunk = world.getChunkAt(lx, lz);
-            if (ly >= Chunk.CHUNK_Y) {
+            BaseChunk chunk = world.getChunkAt(lx, lz);
+            if (ly >= BaseChunk.CHUNK_Y) {
                 lightLevel = 1.0f; // plein ciel
             } else if (chunk != null) {
-                int localX = Math.floorMod(lx, Chunk.CHUNK_X);
-                int localZ = Math.floorMod(lz, Chunk.CHUNK_Z);
+                int localX = Math.floorMod(lx, BaseChunk.CHUNK_X);
+                int localZ = Math.floorMod(lz, BaseChunk.CHUNK_Z);
                 // On prend la moyenne entre le bloc courant et celui au-dessus pour lisser
                 float ll1 = Render.safeGetLightLevel(chunk, localX, ly, localZ);
                 float ll2 = (ly+1 < Chunk.CHUNK_Y) ? Render.safeGetLightLevel(chunk, localX, ly+1, localZ) : 1.0f;

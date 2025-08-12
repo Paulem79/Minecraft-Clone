@@ -14,14 +14,14 @@ import java.util.concurrent.*;
 
 public class World {
 
-    // Remplace Map<Long, Chunk> par Map<Long, Future<Chunk>> pour éviter les chargements multiples
-    private final Map<Long, Future<Chunk>> chunkFutures = new ConcurrentHashMap<>();
+    // Remplace Map<Long, Chunk> par Map<Long, Future<BaseChunk>> pour éviter les chargements multiples
+    private final Map<Long, Future<BaseChunk>> chunkFutures = new ConcurrentHashMap<>();
 
-    public Collection<Chunk> getChunks() {
-        List<Chunk> result = new ArrayList<>();
-        for (Future<Chunk> f : chunkFutures.values()) {
+    public Collection<BaseChunk> getChunks() {
+        List<BaseChunk> result = new ArrayList<>();
+        for (Future<BaseChunk> f : chunkFutures.values()) {
             try {
-                Chunk c = f.get();
+                BaseChunk c = f.get();
                 if (c != null) result.add(c);
             } catch (Exception ignored) {}
         }
@@ -68,10 +68,13 @@ public class World {
         ensureChunksAround(0, 0, 2);
     }
 
-    private Chunk createChunk(int cx, int cz) {
+    private BaseChunk createChunk(int cx, int cz) {
         int originX = cx * Chunk.CHUNK_X;
         int originZ = cz * Chunk.CHUNK_Z;
+        // Par défaut, on crée un Chunk classique. Remplacer par GreedyChunk si besoin.
         return new Chunk(this, originX, originZ);
+        // Pour utiliser GreedyChunk :
+        // return new GreedyChunk(this, originX, originZ);
     }
 
     public boolean isOccluding(int x, int y, int z) {
@@ -80,10 +83,10 @@ public class World {
         int cz = Math.floorDiv(z, Chunk.CHUNK_Z);
         int lx = Math.floorMod(x, Chunk.CHUNK_X);
         int lz = Math.floorMod(z, Chunk.CHUNK_Z);
-        Future<Chunk> f = chunkFutures.get(key(cx, cz));
+        Future<BaseChunk> f = chunkFutures.get(key(cx, cz));
         if (f == null) return false;
         try {
-            Chunk c = f.get();
+            BaseChunk c = f.get();
             if (c == null) return false;
             byte id = c.getBlockId(lx, y, lz);
             Block block = Blocks.blocks.get(id);
@@ -99,10 +102,10 @@ public class World {
         int cz = Math.floorDiv(z, Chunk.CHUNK_Z);
         int lx = Math.floorMod(x, Chunk.CHUNK_X);
         int lz = Math.floorMod(z, Chunk.CHUNK_Z);
-        Future<Chunk> f = chunkFutures.get(key(cx, cz));
+        Future<BaseChunk> f = chunkFutures.get(key(cx, cz));
         if (f == null) return false;
         try {
-            Chunk c = f.get();
+            BaseChunk c = f.get();
             if (c == null) return false;
             byte id = c.getBlockId(lx, y, lz);
             Block block = Blocks.blocks.get(id);
@@ -113,7 +116,7 @@ public class World {
     }
 
     // Nouvelle méthode pour la génération synchrone (extrait de scheduleGeneration)
-    private void generateChunk(Chunk chunk, int cx, int cz) {
+    private void generateChunk(BaseChunk chunk, int cx, int cz) {
         final int baseX = chunk.getOriginX();
         final int baseZ = chunk.getOriginZ();
         // Optimisation : pré-calcule le bruit de biome et les paramètres pour chaque (x, z)
@@ -234,10 +237,10 @@ public class World {
         int cx = Math.floorDiv(x, Chunk.CHUNK_X);
         int cz = Math.floorDiv(z, Chunk.CHUNK_Z);
         long k = key(cx, cz);
-        Future<Chunk> f = chunkFutures.get(k);
+        Future<BaseChunk> f = chunkFutures.get(k);
         if (f == null) return null;
         try {
-            Chunk c = f.get();
+            BaseChunk c = f.get();
             if (c == null) return null;
             int lx = Math.floorMod(x, Chunk.CHUNK_X);
             int lz = Math.floorMod(z, Chunk.CHUNK_Z);
@@ -272,12 +275,12 @@ public class World {
 
                 chunkFutures.computeIfAbsent(k, key -> chunkExecutor.submit(() -> {
                     // Tente de charger depuis le disque
-                    Chunk loadedChunk = chunkIO.loadChunk(cx, cz);
+                    BaseChunk loadedChunk = chunkIO.loadChunk(cx, cz);
                     if (loadedChunk != null) {
                         return loadedChunk;
                     } else {
                         // Génère le chunk si absent
-                        Chunk chunk = createChunk(cx, cz);
+                        BaseChunk chunk = createChunk(cx, cz);
                         if (chunk.getVersion() == 0) {
                             // Génération synchrone ici (sinon il faudrait chaîner les futures)
                             generateChunk(chunk, cx, cz);
@@ -289,17 +292,14 @@ public class World {
         }
     }
 
-    /**
-     * Décharge les chunks qui sont trop éloignés du joueur et sauvegarde les chunks modifiés
-     */
     private void unloadDistantChunks(int playerCx, int playerCz) {
         int unloadRadius = Values.RENDER_RADIUS + unloadBuffer;
         int unloadRadiusSq = unloadRadius * unloadRadius;
         List<Long> chunksToUnload = new ArrayList<>();
-        for (Map.Entry<Long, Future<Chunk>> entry : chunkFutures.entrySet()) {
+        for (Map.Entry<Long, Future<BaseChunk>> entry : chunkFutures.entrySet()) {
             long key = entry.getKey();
             try {
-                Chunk chunk = entry.getValue().get();
+                BaseChunk chunk = entry.getValue().get();
                 if (chunk == null) continue;
                 int cx = chunk.getOriginX() / Chunk.CHUNK_X;
                 int cz = chunk.getOriginZ() / Chunk.CHUNK_Z;
@@ -319,10 +319,7 @@ public class World {
         }
     }
 
-    /**
-     * Sauvegarde un chunk sur le disque (asynchrone)
-     */
-    private void saveChunk(Chunk chunk) {
+    private void saveChunk(BaseChunk chunk) {
         chunkIO.saveChunkAsync(chunk);
         chunk.markClean();
     }
@@ -330,9 +327,9 @@ public class World {
     // Gracefully shutdown background generation threads
     public void shutdown() {
         // Sauvegarder tous les chunks modifiés avant de fermer
-        for (Future<Chunk> f : chunkFutures.values()) {
+        for (Future<BaseChunk> f : chunkFutures.values()) {
             try {
-                Chunk chunk = f.get();
+                BaseChunk chunk = f.get();
                 if (chunk != null && chunk.isDirty()) {
                     saveChunk(chunk);
                 }
@@ -365,58 +362,53 @@ public class World {
 
     public void setBlock(int x, int y, int z, Block block) {
         if (y < 0 || y >= Chunk.CHUNK_Y) return; // Vérification des limites en Y
-
         // Obtenir le chunk contenant le bloc
-        Chunk chunk = getChunkAt(x, z);
+        BaseChunk chunk = getChunkAt(x, z);
         if (chunk != null) {
             // Convertir les coordonnées globales en coordonnées locales du chunk
             int localX = Math.floorMod(x, Chunk.CHUNK_X);
             int localZ = Math.floorMod(z, Chunk.CHUNK_Z);
-
             // Modifier le bloc
             chunk.setBlock(localX, y, localZ, block);
-
             // --- Mise à jour dynamique de la lumière ---
             lightEngine.propagateSkyLight(chunk);
             chunk.markDirty();
             // --- Fin lumière dynamique ---
-
             // Vérifier si le bloc est à la bordure d'un chunk et mettre à jour les chunks voisins
             if (localX == 0) {
                 // Bloc à la bordure -X, mettre à jour le chunk à gauche
-                Chunk neighbor = getChunk(Math.floorDiv(x, Chunk.CHUNK_X) - 1, Math.floorDiv(z, Chunk.CHUNK_Z));
+                BaseChunk neighbor = getChunk(Math.floorDiv(x, Chunk.CHUNK_X) - 1, Math.floorDiv(z, Chunk.CHUNK_Z));
                 if (neighbor != null) neighbor.bumpVersion();
             }
             else if (localX == Chunk.CHUNK_X - 1) {
                 // Bloc à la bordure +X, mettre à jour le chunk à droite
-                Chunk neighbor = getChunk(Math.floorDiv(x, Chunk.CHUNK_X) + 1, Math.floorDiv(z, Chunk.CHUNK_Z));
+                BaseChunk neighbor = getChunk(Math.floorDiv(x, Chunk.CHUNK_X) + 1, Math.floorDiv(z, Chunk.CHUNK_Z));
                 if (neighbor != null) neighbor.bumpVersion();
             }
-
             if (localZ == 0) {
                 // Bloc à la bordure -Z, mettre à jour le chunk devant
-                Chunk neighbor = getChunk(Math.floorDiv(x, Chunk.CHUNK_X), Math.floorDiv(z, Chunk.CHUNK_Z) - 1);
+                BaseChunk neighbor = getChunk(Math.floorDiv(x, Chunk.CHUNK_X), Math.floorDiv(z, Chunk.CHUNK_Z) - 1);
                 if (neighbor != null) neighbor.bumpVersion();
             }
             else if (localZ == Chunk.CHUNK_Z - 1) {
                 // Bloc à la bordure +Z, mettre à jour le chunk derrière
-                Chunk neighbor = getChunk(Math.floorDiv(x, Chunk.CHUNK_X), Math.floorDiv(z, Chunk.CHUNK_Z) + 1);
+                BaseChunk neighbor = getChunk(Math.floorDiv(x, Chunk.CHUNK_X), Math.floorDiv(z, Chunk.CHUNK_Z) + 1);
                 if (neighbor != null) neighbor.bumpVersion();
             }
         }
     }
 
     @Nullable
-    public Chunk getChunkAt(int x, int z) {
+    public BaseChunk getChunkAt(int x, int z) {
         int cx = Math.floorDiv(x, Chunk.CHUNK_X);
         int cz = Math.floorDiv(z, Chunk.CHUNK_Z);
         return getChunk(cx, cz);
     }
 
     @Nullable
-    public Chunk getChunk(int cx, int cz) {
+    public BaseChunk getChunk(int cx, int cz) {
         long k = key(cx, cz);
-        Future<Chunk> f = chunkFutures.get(k);
+        Future<BaseChunk> f = chunkFutures.get(k);
         if (f == null) return null;
         try {
             return f.get();

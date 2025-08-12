@@ -33,9 +33,9 @@ public class ChunkIO {
     /**
      * Sauvegarde un chunk sur le disque (privée, utiliser saveChunkAsync)
      */
-    private void saveChunk(Chunk chunk) {
-        int chunkX = chunk.getOriginX() / Chunk.CHUNK_X;
-        int chunkZ = chunk.getOriginZ() / Chunk.CHUNK_Z;
+    private void saveChunk(BaseChunk chunk) {
+        int chunkX = chunk.getOriginX() / BaseChunk.CHUNK_X;
+        int chunkZ = chunk.getOriginZ() / BaseChunk.CHUNK_Z;
         long chunkKey = (((long)chunkX) << 32) ^ (chunkZ & 0xffffffffL);
         Object lock = chunkLocks.computeIfAbsent(chunkKey, k -> new Object());
         synchronized (lock) {
@@ -54,14 +54,46 @@ public class ChunkIO {
                     dos.writeInt(chunk.getOriginZ());
                     dos.writeInt(chunk.getVersion());
 
-                    // Sauvegarde des blocs compressés RLE (byte)
-                    byte[] blocks = new byte[Chunk.CHUNK_X * Chunk.CHUNK_Y * Chunk.CHUNK_Z];
-                    int idx = 0;
-                    for (int x = 0; x < Chunk.CHUNK_X; x++)
-                        for (int y = 0; y < Chunk.CHUNK_Y; y++)
-                            for (int z = 0; z < Chunk.CHUNK_Z; z++)
-                                blocks[idx++] = chunk.getBlockId(x, y, z);
-                    writeRLEByteArray(dos, blocks);
+                    // Type de chunk : 0 = Chunk, 1 = GreedyChunk
+                    if (chunk instanceof GreedyChunk) {
+                        dos.writeByte(1);
+                        GreedyChunk gChunk = (GreedyChunk) chunk;
+                        byte[] rleBlocks = gChunk.getRleBlocks();
+                        byte[] rleLight = gChunk.getRleLightLevels();
+                        dos.writeInt(rleBlocks.length);
+                        dos.write(rleBlocks);
+                        dos.writeInt(rleLight.length);
+                        dos.write(rleLight);
+                    } else {
+                        dos.writeByte(0);
+                        // Sauvegarde des blocs compressés RLE (byte)
+                        byte[] blocks = new byte[BaseChunk.CHUNK_X * BaseChunk.CHUNK_Y * BaseChunk.CHUNK_Z];
+                        int idx = 0;
+                        for (int x = 0; x < BaseChunk.CHUNK_X; x++)
+                            for (int y = 0; y < BaseChunk.CHUNK_Y; y++)
+                                for (int z = 0; z < BaseChunk.CHUNK_Z; z++)
+                                    blocks[idx++] = chunk.getBlockId(x, y, z);
+                        writeRLEByteArray(dos, blocks);
+                        // Sauvegarde de la lumière compressée RLE
+                        byte[] light = new byte[(BaseChunk.CHUNK_X * BaseChunk.CHUNK_Y * BaseChunk.CHUNK_Z + 1) / 2];
+                        idx = 0;
+                        for (int x = 0; x < BaseChunk.CHUNK_X; x++)
+                            for (int y = 0; y < BaseChunk.CHUNK_Y; y++)
+                                for (int z = 0; z < BaseChunk.CHUNK_Z; z++) {
+                                    int index = chunk.getIndex(x, y, z);
+                                    int byteIndex = index / 2;
+                                    boolean highNibble = (index % 2) == 0;
+                                    byte b = light[byteIndex];
+                                    byte level = chunk.getLightLevel(x, y, z);
+                                    if (highNibble) {
+                                        b = (byte) ((b & 0x0F) | ((level & 0xF) << 4));
+                                    } else {
+                                        b = (byte) ((b & 0xF0) | (level & 0xF));
+                                    }
+                                    light[byteIndex] = b;
+                                }
+                        writeRLEByteArray(dos, light);
+                    }
                     dos.flush();
                 }
                 try {
@@ -84,7 +116,7 @@ public class ChunkIO {
      * Charge un chunk depuis le disque
      * @return le chunk chargé ou null si le chunk n'existe pas ou ne peut pas être chargé
      */
-    public Chunk loadChunk(int chunkX, int chunkZ) {
+    public BaseChunk loadChunk(int chunkX, int chunkZ) {
         long chunkKey = (((long)chunkX) << 32) ^ (chunkZ & 0xffffffffL);
         Object lock = chunkLocks.computeIfAbsent(chunkKey, k -> new Object());
         synchronized (lock) {
@@ -100,23 +132,45 @@ public class ChunkIO {
                 int originX = dis.readInt();
                 int originZ = dis.readInt();
                 int version = dis.readInt();
+                int type = dis.readByte();
 
-                // Création du chunk
-                Chunk chunk = new Chunk(world, originX, originZ);
-
-                // Chargement des blocs compressés RLE (byte)
-                byte[] blocks = new byte[Chunk.CHUNK_X * Chunk.CHUNK_Y * Chunk.CHUNK_Z];
-                readRLEByteArray(dis, blocks);
-                int idx = 0;
-                for (int x = 0; x < Chunk.CHUNK_X; x++)
-                    for (int y = 0; y < Chunk.CHUNK_Y; y++)
-                        for (int z = 0; z < Chunk.CHUNK_Z; z++)
-                            chunk.setBlockId(x, y, z, (byte)blocks[idx++]);
-
-                // Restauration de la version sans déclencher de nouveau bump
-                chunk.setVersion(version);
-
-                return chunk;
+                if (type == 1) { // GreedyChunk
+                    int rleBlocksLen = dis.readInt();
+                    byte[] rleBlocks = new byte[rleBlocksLen];
+                    dis.readFully(rleBlocks);
+                    int rleLightLen = dis.readInt();
+                    byte[] rleLight = new byte[rleLightLen];
+                    dis.readFully(rleLight);
+                    GreedyChunk gChunk = new GreedyChunk(world, originX, originZ, rleBlocks, rleLight);
+                    gChunk.setVersion(version);
+                    return gChunk;
+                } else { // Chunk classique
+                    Chunk chunk = new Chunk(world, originX, originZ);
+                    // Chargement des blocs compressés RLE (byte)
+                    byte[] blocks = new byte[BaseChunk.CHUNK_X * BaseChunk.CHUNK_Y * BaseChunk.CHUNK_Z];
+                    readRLEByteArray(dis, blocks);
+                    int idx = 0;
+                    for (int x = 0; x < BaseChunk.CHUNK_X; x++)
+                        for (int y = 0; y < BaseChunk.CHUNK_Y; y++)
+                            for (int z = 0; z < BaseChunk.CHUNK_Z; z++)
+                                chunk.setBlockId(x, y, z, (byte)blocks[idx++]);
+                    // Chargement de la lumière compressée RLE
+                    byte[] light = new byte[(BaseChunk.CHUNK_X * BaseChunk.CHUNK_Y * BaseChunk.CHUNK_Z + 1) / 2];
+                    readRLEByteArray(dis, light);
+                    idx = 0;
+                    for (int x = 0; x < BaseChunk.CHUNK_X; x++)
+                        for (int y = 0; y < BaseChunk.CHUNK_Y; y++)
+                            for (int z = 0; z < BaseChunk.CHUNK_Z; z++) {
+                                int index = chunk.getIndex(x, y, z);
+                                int byteIndex = index / 2;
+                                boolean highNibble = (index % 2) == 0;
+                                byte b = light[byteIndex];
+                                byte level = (byte) (highNibble ? (b >> 4) & 0xF : b & 0xF);
+                                chunk.setLightLevel(x, y, z, level);
+                            }
+                    chunk.setVersion(version);
+                    return chunk;
+                }
             } catch (IOException e) {
                 e.printStackTrace();
                 return null;
@@ -160,7 +214,7 @@ public class ChunkIO {
     /**
      * Sauvegarde un chunk de façon asynchrone
      */
-    public void saveChunkAsync(Chunk chunk) {
+    public void saveChunkAsync(BaseChunk chunk) {
         saveExecutor.submit(() -> saveChunk(chunk));
     }
 

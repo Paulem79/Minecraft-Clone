@@ -8,6 +8,7 @@ import ovh.paulem.mc.engine.Hotbar;
 import ovh.paulem.mc.engine.Window;
 import ovh.paulem.mc.engine.render.texture.*;
 import ovh.paulem.mc.math.FastRandom;
+import ovh.paulem.mc.world.BaseChunk;
 import ovh.paulem.mc.world.Biome;
 import ovh.paulem.mc.world.block.Face;
 import ovh.paulem.mc.world.block.types.Block;
@@ -52,15 +53,15 @@ public class Render {
 
     // Cache meshes per chunk for multi-chunk rendering
     private record ChunkMesh(List<MeshBatch> list, boolean greedy, int version) {}
-    private final Map<Chunk, ChunkMesh> meshCache = new HashMap<>();
+    private final Map<BaseChunk, ChunkMesh> meshCache = new HashMap<>();
 
     // Queue of chunks that need mesh (re)build; processed with small budget per frame to avoid spikes
-    private final ArrayDeque<Chunk> meshBuildQueue = new ArrayDeque<>();
+    private final ArrayDeque<BaseChunk> meshBuildQueue = new ArrayDeque<>();
 
     // Ajout d'un ExecutorService pour le meshing parallèle
     private final ExecutorService meshExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
     // Map temporaire pour stocker les résultats de meshing asynchrone
-    private final Map<Chunk, Future<MeshBuildResult>> meshFutures = new ConcurrentHashMap<>();
+    private final Map<BaseChunk, Future<MeshBuildResult>> meshFutures = new ConcurrentHashMap<>();
 
     private ParticleSystem particleSystem = new ParticleSystem();
     private Shader particleShader;
@@ -136,7 +137,7 @@ public class Render {
             // Rebuild up to a small number of chunk meshes per frame to avoid spikes
             int rebuilt = 0;
             while (rebuilt < Values.MESHES_PER_FRAME_BUDGET && !meshBuildQueue.isEmpty()) {
-                Chunk qc = meshBuildQueue.pollFirst();
+                BaseChunk qc = meshBuildQueue.pollFirst();
                 if (qc == null) break;
                 // Determine greedy based on current camera distance
                 float qccx = qc.getOriginX() + Chunk.CHUNK_X * 0.5f;
@@ -156,9 +157,9 @@ public class Render {
                 rebuilt++;
             }
             // Récupérer les résultats terminés et les placer dans le cache principal
-            Iterator<Map.Entry<Chunk, Future<MeshBuildResult>>> it = meshFutures.entrySet().iterator();
+            Iterator<Map.Entry<BaseChunk, Future<MeshBuildResult>>> it = meshFutures.entrySet().iterator();
             while (it.hasNext()) {
-                Map.Entry<Chunk, Future<MeshBuildResult>> entry = it.next();
+                Map.Entry<BaseChunk, Future<MeshBuildResult>> entry = it.next();
                 Future<MeshBuildResult> future = entry.getValue();
                 if (future.isDone()) {
                     try {
@@ -174,10 +175,10 @@ public class Render {
             }
 
             // Render all loaded chunks with per-chunk model transform
-            Collection<Chunk> chunks = world.getChunks();
+            Collection<BaseChunk> chunks = world.getChunks();
             float camX = camera.getPosition().x;
             float camZ = camera.getPosition().z;
-            for (Chunk c : chunks) {
+            for (BaseChunk c : chunks) {
                 // Decide whether to use greedy meshing based on horizontal distance to chunk center
                 float chunkCenterX = c.getOriginX() + Chunk.CHUNK_X * 0.5f;
                 float chunkCenterZ = c.getOriginZ() + Chunk.CHUNK_Z * 0.5f;
@@ -386,7 +387,7 @@ public class Render {
     }
 
     // Modifie buildChunkMeshesGreedy pour retourner RawMeshData
-    private RawMeshData buildChunkMeshesGreedyRaw(Chunk chunk) {
+    private RawMeshData buildChunkMeshesGreedyRaw(BaseChunk chunk) {
         Map<String, Acc> accs = new HashMap<>();
 
         // Pré-calcul des tailles pour chaque face
@@ -595,7 +596,7 @@ public class Render {
         int indexOffset = 0;
     }
 
-    private Map<String, Acc> buildChunkFaces(Chunk chunk) {
+    private Map<String, Acc> buildChunkFaces(BaseChunk chunk) {
         Map<String, Acc> accs = new HashMap<>();
 
         for (int x = 0; x < Chunk.CHUNK_X; x++) {
@@ -682,7 +683,7 @@ public class Render {
     }
 
     // Idem pour buildChunkMeshesNonGreedy
-    private RawMeshData buildChunkMeshesNonGreedyRaw(Chunk chunk) {
+    private RawMeshData buildChunkMeshesNonGreedyRaw(BaseChunk chunk) {
         Map<String, Acc> accs = buildChunkFaces(chunk);
 
         return convertAccsToRawMeshData(accs);
@@ -735,10 +736,9 @@ public class Render {
     }
 
     // Utilitaire pour éviter les ArrayIndexOutOfBounds lors de l'accès à la lumière
-    public static float safeGetLightLevel(Chunk chunk, int x, int y, int z) {
-        if (y >= Chunk.CHUNK_Y) return 1.0f; // ciel
-        if (x < 0 || y < 0 || z < 0) return 0.0f; // hors chunk ou souterrain
-        // On va lisser entre les chunks en accédant aux voisins même hors chunk courant
+    public static float safeGetLightLevel(BaseChunk chunk, int x, int y, int z) {
+        if (y >= BaseChunk.CHUNK_Y) return 1.0f; // ciel
+        if (x < 0 || y < 0 || z < 0) return 0.0f; // hors chunk
         float sum = 0.0f;
         int count = 0;
         int[][] dirs = {{0,0,0},{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
@@ -746,19 +746,19 @@ public class Render {
             int nx = x + d[0];
             int ny = y + d[1];
             int nz = z + d[2];
-            Chunk refChunk = chunk;
+            BaseChunk refChunk = chunk;
             int cx = nx, cy = ny, cz = nz;
             // Si hors chunk courant, chercher le chunk voisin
-            if (nx < 0 || nx >= Chunk.CHUNK_X || nz < 0 || nz >= Chunk.CHUNK_Z) {
+            if (nx < 0 || nx >= BaseChunk.CHUNK_X || nz < 0 || nz >= BaseChunk.CHUNK_Z) {
                 if (chunk.getWorld() == null) continue;
                 int wx = chunk.getOriginX() + nx;
                 int wz = chunk.getOriginZ() + nz;
                 refChunk = chunk.getWorld().getChunkAt(wx, wz);
                 if (refChunk == null) continue;
-                cx = (wx % Chunk.CHUNK_X + Chunk.CHUNK_X) % Chunk.CHUNK_X;
-                cz = (wz % Chunk.CHUNK_Z + Chunk.CHUNK_Z) % Chunk.CHUNK_Z;
+                cx = (wx % BaseChunk.CHUNK_X + BaseChunk.CHUNK_X) % BaseChunk.CHUNK_X;
+                cz = (wz % BaseChunk.CHUNK_Z + BaseChunk.CHUNK_Z) % BaseChunk.CHUNK_Z;
             }
-            if (cy < 0 || cy >= Chunk.CHUNK_Y) continue;
+            if (cy < 0 || cy >= BaseChunk.CHUNK_Y) continue;
             sum += refChunk.getLightLevel(cx, cy, cz) / 15.0f;
             count++;
         }
@@ -782,11 +782,11 @@ public class Render {
         glLineWidth(2.0f);
         float[] color = {1.0f, 1.0f, 0.0f, 1.0f}; // Jaune
         glColor4f(color[0], color[1], color[2], color[3]);
-        for (Chunk chunk : MC.INSTANCE.getPlayer().getChunksAround(1)) {
+        for (BaseChunk chunk : MC.INSTANCE.getPlayer().getChunksAround(1)) {
             float x0 = chunk.getOriginX();
             float z0 = chunk.getOriginZ();
-            float x1 = x0 + Chunk.CHUNK_X;
-            float z1 = z0 + Chunk.CHUNK_Z;
+            float x1 = x0 + BaseChunk.CHUNK_X;
+            float z1 = z0 + BaseChunk.CHUNK_Z;
             float y0 = 0f;
             float y1 = 256f;
             // Bordures du chunk

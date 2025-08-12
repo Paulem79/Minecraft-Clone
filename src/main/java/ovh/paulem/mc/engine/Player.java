@@ -1,7 +1,7 @@
 package ovh.paulem.mc.engine;
 
 import lombok.Getter;
-import ovh.paulem.mc.world.Chunk;
+import ovh.paulem.mc.world.BaseChunk;
 import ovh.paulem.mc.world.World;
 import org.joml.Vector3f;
 
@@ -260,13 +260,13 @@ public class Player {
         }
     }
 
-    public List<Chunk> getChunksAround(int radius) {
+    public List<BaseChunk> getChunksAround(int radius) {
         int px = (int) Math.floor(position.x);
         int pz = (int) Math.floor(position.z);
-        List<Chunk> chunks = new java.util.ArrayList<>();
+        List<BaseChunk> chunks = new java.util.ArrayList<>();
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dz = -radius; dz <= radius; dz++) {
-                Chunk chunk = world.getChunkAt(px + dx * Chunk.CHUNK_X, pz + dz * Chunk.CHUNK_Z);
+                BaseChunk chunk = world.getChunkAt(px + dx * BaseChunk.CHUNK_X, pz + dz * BaseChunk.CHUNK_Z);
                 if (chunk != null) {
                     chunks.add(chunk);
                 }
