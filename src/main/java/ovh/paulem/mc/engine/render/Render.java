@@ -1,5 +1,6 @@
 package ovh.paulem.mc.engine.render;
 
+import lombok.Getter;
 import ovh.paulem.mc.MC;
 import ovh.paulem.mc.Values;
 import ovh.paulem.mc.engine.Camera;
@@ -43,6 +44,7 @@ public class Render {
     }
 
     private Shader shader;
+    @Getter
     private Camera camera;
     private World world;
     private HotbarRenderer hotbarRenderer;
@@ -115,10 +117,6 @@ public class Render {
     public void setHotbar(Hotbar hotbar) {
         this.hotbar = hotbar;
         this.hotbarRenderer = new HotbarRenderer(hotbar, shader);
-    }
-
-    public Camera getCamera() {
-        return camera;
     }
 
     public void render(Window window) {
@@ -517,33 +515,23 @@ public class Render {
                                 };
                             }
                         }
+                        // --- LOGIQUE LUMIÈRE GREEDY ---
+                        float[] lightLevels = new float[]{1.0f, 1.0f, 1.0f, 1.0f};
+                        // --- FIN LOGIQUE LUMIÈRE GREEDY ---
                         // Génération des quads selon la face
                         switch (f) {
                             case 0: { // +X at x=w, u=z, v=y
                                 float x0 = w + 1; // face sits at +X side
                                 float y1 = v + height;
                                 float z1 = u + width;
-                                float[] lightLevels = new float[]{
-                                        safeGetLightLevel(chunk, (int)x0-1, v, (int)z1-1),
-                                        safeGetLightLevel(chunk, (int)x0-1, v, u),
-                                        safeGetLightLevel(chunk, (int)x0-1, (int)y1-1, u),
-                                        safeGetLightLevel(chunk, (int)x0-1, (int)y1-1, (int)z1-1)
-                                };
                                 addQuad(acc.verts, acc.inds,
                                         new float[]{x0, (float) v, z1}, new float[]{x0, (float) v, (float) u}, new float[]{x0, y1, (float) u}, new float[]{x0, y1, z1},
                                         normal, acc.indexOffset, lightLevels, biomeColor);
                                 acc.indexOffset += 4;
                                 break; }
                             case 1: { // -X at x=w, u=z, v=y
-                                // face sits at -X side
                                 float y1 = v + height;
                                 float z1 = u + width;
-                                float[] lightLevels = new float[]{
-                                        safeGetLightLevel(chunk, w, v, u),
-                                        safeGetLightLevel(chunk, w, v, (int)z1),
-                                        safeGetLightLevel(chunk, w, (int)y1-1, (int)z1),
-                                        safeGetLightLevel(chunk, w, (int)y1-1, u)
-                                };
                                 addQuad(acc.verts, acc.inds,
                                         new float[]{(float) w, (float) v, (float) u}, new float[]{(float) w, (float) v, z1}, new float[]{(float) w, y1, z1}, new float[]{(float) w, y1, (float) u},
                                         normal, acc.indexOffset, lightLevels, biomeColor);
@@ -553,27 +541,14 @@ public class Render {
                                 float y0 = w + 1; // top face at +Y side
                                 float x1 = u + width;
                                 float z1 = v + height;
-                                float[] lightLevels = new float[]{
-                                        safeGetLightLevel(chunk, u, w, v),
-                                        safeGetLightLevel(chunk, u, w, (int)z1),
-                                        safeGetLightLevel(chunk, (int)x1, w, (int)z1),
-                                        safeGetLightLevel(chunk, (int)x1, w, v)
-                                };
                                 addQuad(acc.verts, acc.inds,
                                         new float[]{(float) u, y0, (float) v}, new float[]{(float) u, y0, z1}, new float[]{x1, y0, z1}, new float[]{x1, y0, (float) v},
                                         normal, acc.indexOffset, lightLevels, biomeColor);
                                 acc.indexOffset += 4;
                                 break; }
                             case 3: { // -Y at y=w, u=x, v=z
-                                // bottom face at -Y side
                                 float x1 = u + width;
                                 float z1 = v + height;
-                                float[] lightLevels = new float[]{
-                                        safeGetLightLevel(chunk, u, w, v),
-                                        safeGetLightLevel(chunk, (int)x1, w, v),
-                                        safeGetLightLevel(chunk, (int)x1, w, (int)z1),
-                                        safeGetLightLevel(chunk, u, w, (int)z1)
-                                };
                                 addQuad(acc.verts, acc.inds,
                                         new float[]{(float) u, (float) w, (float) v}, new float[]{x1, (float) w, (float) v}, new float[]{x1, (float) w, z1}, new float[]{(float) u, (float) w, z1},
                                         normal, acc.indexOffset, lightLevels, biomeColor);
@@ -583,27 +558,14 @@ public class Render {
                                 float z0 = w + 1; // front face at +Z side
                                 float x1 = u + width;
                                 float y1 = v + height;
-                                float[] lightLevels = new float[]{
-                                        safeGetLightLevel(chunk, u, v, w),
-                                        safeGetLightLevel(chunk, (int)x1, v, w),
-                                        safeGetLightLevel(chunk, (int)x1, (int)y1, w),
-                                        safeGetLightLevel(chunk, u, (int)y1, w)
-                                };
                                 addQuad(acc.verts, acc.inds,
                                         new float[]{(float) u, (float) v, z0}, new float[]{x1, (float) v, z0}, new float[]{x1, y1, z0}, new float[]{(float) u, y1, z0},
                                         normal, acc.indexOffset, lightLevels, biomeColor);
                                 acc.indexOffset += 4;
                                 break; }
                             default: { // 5: -Z at z=w, u=x, v=y
-                                // back face at -Z side
                                 float x1 = u + width;
                                 float y1 = v + height;
-                                float[] lightLevels = new float[]{
-                                        safeGetLightLevel(chunk, (int)x1, v, w),
-                                        safeGetLightLevel(chunk, u, v, w),
-                                        safeGetLightLevel(chunk, u, (int)y1, w),
-                                        safeGetLightLevel(chunk, (int)x1, (int)y1, w)
-                                };
                                 addQuad(acc.verts, acc.inds,
                                         new float[]{x1, (float) v, (float) w}, new float[]{(float) u, (float) v, (float) w}, new float[]{(float) u, y1, (float) w}, new float[]{x1, y1, (float) w},
                                         normal, acc.indexOffset, lightLevels, biomeColor);
