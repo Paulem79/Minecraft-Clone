@@ -1,7 +1,6 @@
 package ovh.paulem.mc.world;
 
 import lombok.Getter;
-import org.joml.Vector3f;
 import ovh.paulem.mc.world.block.types.Block;
 import ovh.paulem.mc.world.block.Blocks;
 
@@ -17,7 +16,7 @@ public class Chunk {
     @Getter
     private final int originZ;
     // Remplace blocks[x][y][z] par un tableau 1D pour de meilleures performances
-    private final int[] blocks = new int[CHUNK_X * CHUNK_Y * CHUNK_Z];
+    private final byte[] blocks = new byte[CHUNK_X * CHUNK_Y * CHUNK_Z];
     // Version increments when the chunk's block data is updated (e.g., generation complete)
     @Getter
     private volatile int version = 0;
@@ -39,21 +38,21 @@ public class Chunk {
         return x + CHUNK_X * (z + CHUNK_Z * y);
     }
 
-    public int getBlockId(int x, int y, int z) {
+    public byte getBlockId(int x, int y, int z) {
         return blocks[getIndex(x, y, z)];
     }
     public Block getBlock(int x, int y, int z) {
         return Blocks.blocks.get(getBlockId(x, y, z));
     }
 
-    public void setBlockId(int x, int y, int z, int id) {
+    public void setBlockId(int x, int y, int z, byte id) {
         int idx = getIndex(x, y, z);
         if (blocks[idx] != id) {
             blocks[idx] = id;
             bumpVersion(); // Incrémenter la version pour déclencher la reconstruction du mesh
         }
     }
-    public void setBlock(int x, int y, int z, Block block) { setBlockId(x, y, z, block.getId()); }
+    public void setBlock(int x, int y, int z, Block block) { setBlockId(x, y, z, (byte)block.getId()); }
 
     public void bumpVersion() {
         version++;
@@ -81,9 +80,6 @@ public class Chunk {
     }
 
     public byte getLightLevel(int x, int y, int z) {
-        x = org.joml.Math.clamp(0, CHUNK_X-1, x);
-        y = org.joml.Math.clamp(0, CHUNK_Y-1, y);
-        z = org.joml.Math.clamp(0, CHUNK_Z-1, z);
         int index = getIndex(x, y, z);
         int byteIndex = index / 2;
         boolean highNibble = (index % 2) == 0;
@@ -92,9 +88,6 @@ public class Chunk {
     }
 
     public void setLightLevel(int x, int y, int z, byte level) {
-        x = org.joml.Math.clamp(0, CHUNK_X-1, x);
-        y = org.joml.Math.clamp(0, CHUNK_Y-1, y);
-        z = org.joml.Math.clamp(0, CHUNK_Z-1, z);
         int index = getIndex(x, y, z);
         int byteIndex = index / 2;
         boolean highNibble = (index % 2) == 0;
