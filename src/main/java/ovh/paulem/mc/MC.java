@@ -78,6 +78,12 @@ public class MC {
     @Getter
     private SoundPlayer soundPlayer;
 
+    // Objets temporaires réutilisables pour limiter les allocations
+    private final Vector3f tmpWish = new Vector3f();
+    private final Vector3f tmpForward = new Vector3f();
+    private final Vector3f tmpRight = new Vector3f();
+    private final Vector3f tmpWorldWish = new Vector3f();
+
     public void run() throws Exception {
         init();
         loop();
@@ -218,23 +224,23 @@ public class MC {
             if (cam.getRotation().x < -89) cam.getRotation().x = -89;
 
             // Keyboard movement
-            Vector3f wish = new Vector3f(0,0,0);
-            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) wish.z += 1;
-            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) wish.z -= 1;
-            if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) wish.x += 1;
-            if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) wish.x -= 1;
-            if (wish.lengthSquared() > 0) wish.normalize();
+            tmpWish.set(0,0,0);
+            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) tmpWish.z += 1;
+            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) tmpWish.z -= 1;
+            if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) tmpWish.x += 1;
+            if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) tmpWish.x -= 1;
+            if (tmpWish.lengthSquared() > 0) tmpWish.normalize();
             // Convert wish (local) to world using yaw
             float yawRad = (float)Math.toRadians(cam.getRotation().y);
-            Vector3f forward = new Vector3f((float)Math.sin(yawRad), 0, (float)-Math.cos(yawRad));
-            Vector3f right = new Vector3f(forward.z, 0, -forward.x);
-            Vector3f worldWish = new Vector3f(0,0,0);
-            worldWish.fma(wish.z, forward).fma(wish.x, right);
+            tmpForward.set((float)Math.sin(yawRad), 0, (float)-Math.cos(yawRad));
+            tmpRight.set(tmpForward.z, 0, -tmpForward.x);
+            tmpWorldWish.set(0,0,0);
+            tmpWorldWish.fma(tmpWish.z, tmpForward).fma(tmpWish.x, tmpRight);
 
             // Sprint
             boolean sprint = glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS;
             float moveSpeed = sprint ? 5.612f : 4.317f;
-            worldWish.mul(moveSpeed);
+            tmpWorldWish.mul(moveSpeed);
 
             // FOV cible selon le sprint
             float targetFov = sprint ? 90.0f : 70.0f;
@@ -255,7 +261,7 @@ public class MC {
             // If no simulation is pending, start a new one with current inputs
             if (pendingSim == null) {
                 final Player.State snap = player.snapshot();
-                final Vector3f wishCopy = new Vector3f(worldWish);
+                final Vector3f wishCopy = new Vector3f(tmpWorldWish);
                 final boolean jumpCopy = jump;
                 final boolean sprintCopy = sprint;
                 final float dtCopy = dt;
