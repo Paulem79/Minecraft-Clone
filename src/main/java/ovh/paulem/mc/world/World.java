@@ -337,10 +337,10 @@ public class World {
     }
 
     /**
-     * Sauvegarde un chunk sur le disque
+     * Sauvegarde un chunk sur le disque (asynchrone)
      */
     private void saveChunk(Chunk chunk) {
-        chunkIO.saveChunk(chunk);
+        chunkIO.saveChunkAsync(chunk);
         chunk.markClean();
     }
 
@@ -366,6 +366,8 @@ public class World {
             chunkExecutor.shutdownNow();
             Thread.currentThread().interrupt();
         }
+
+        chunkIO.shutdown();
 
         getLightEngine().getLightExecutor().shutdown();
         try {

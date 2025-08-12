@@ -1,11 +1,13 @@
 package ovh.paulem.mc.world;
 
 import ovh.paulem.mc.Dirs;
-import ovh.paulem.mc.math.ZLibUtils;
 
 import java.io.*;
 import java.nio.file.*;
-import java.util.logging.Logger;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
 
 /**
  * Gère la sauvegarde et le chargement des chunks sur le disque
@@ -13,6 +15,8 @@ import java.util.logging.Logger;
 public class ChunkIO {
     private final Path worldDirectory;
     private final World world;
+    private final ExecutorService saveExecutor = Executors.newSingleThreadExecutor();
+    private final Map<Long, Object> chunkLocks = new ConcurrentHashMap<>();
 
     public ChunkIO(World world, String worldName) {
         this.world = world;
@@ -27,40 +31,52 @@ public class ChunkIO {
     }
 
     /**
-     * Sauvegarde un chunk sur le disque
+     * Sauvegarde un chunk sur le disque (privée, utiliser saveChunkAsync)
      */
-    public void saveChunk(Chunk chunk) {
+    private void saveChunk(Chunk chunk) {
         int chunkX = chunk.getOriginX() / Chunk.CHUNK_X;
         int chunkZ = chunk.getOriginZ() / Chunk.CHUNK_Z;
-        Path regionDir = getRegionDirectory(chunkX, chunkZ);
+        long chunkKey = (((long)chunkX) << 32) ^ (chunkZ & 0xffffffffL);
+        Object lock = chunkLocks.computeIfAbsent(chunkKey, k -> new Object());
+        synchronized (lock) {
+            Path regionDir = getRegionDirectory(chunkX, chunkZ);
+            try {
+                Files.createDirectories(regionDir);
+                Path chunkFile = getChunkFile(chunkX, chunkZ);
+                Path tempFile = chunkFile.resolveSibling(chunkFile.getFileName() + ".tmp");
 
-        try {
-            Files.createDirectories(regionDir);
-            Path chunkFile = getChunkFile(chunkX, chunkZ);
+                try (FileOutputStream fos = new FileOutputStream(tempFile.toFile());
+                     BufferedOutputStream bos = new BufferedOutputStream(fos);
+                     ObjectOutputStream oos = new ObjectOutputStream(bos)) {
 
-            try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                 ObjectOutputStream oos = new ObjectOutputStream(new BufferedOutputStream(baos))) {
+                    // Sauvegarde des métadonnées du chunk
+                    oos.writeInt(chunk.getOriginX());
+                    oos.writeInt(chunk.getOriginZ());
+                    oos.writeInt(chunk.getVersion());
 
-                // Sauvegarde des métadonnées du chunk
-                oos.writeInt(chunk.getOriginX());
-                oos.writeInt(chunk.getOriginZ());
-                oos.writeInt(chunk.getVersion());
-
-                // Sauvegarde des blocs
-                for (int x = 0; x < Chunk.CHUNK_X; x++) {
-                    for (int y = 0; y < Chunk.CHUNK_Y; y++) {
-                        for (int z = 0; z < Chunk.CHUNK_Z; z++) {
-                            oos.writeInt(chunk.getBlockId(x, y, z));
-                        }
+                    // Sauvegarde des blocs compressés RLE
+                    int[] blocks = new int[Chunk.CHUNK_X * Chunk.CHUNK_Y * Chunk.CHUNK_Z];
+                    int idx = 0;
+                    for (int x = 0; x < Chunk.CHUNK_X; x++)
+                        for (int y = 0; y < Chunk.CHUNK_Y; y++)
+                            for (int z = 0; z < Chunk.CHUNK_Z; z++)
+                                blocks[idx++] = chunk.getBlockId(x, y, z);
+                    writeRLEIntArray(oos, blocks);
+                    oos.flush();
+                }
+                try {
+                    Files.move(tempFile, chunkFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                } catch (AtomicMoveNotSupportedException | AccessDeniedException e) {
+                    try {
+                        Files.move(tempFile, chunkFile, StandardCopyOption.REPLACE_EXISTING);
+                    } catch (IOException ex) {
+                        try { Files.deleteIfExists(tempFile); } catch (IOException ignored) {}
+                        throw ex;
                     }
                 }
-
-                oos.flush();
-                byte[] compressed = ZLibUtils.compress(baos.toByteArray());
-                Files.write(chunkFile, compressed);
+            } catch (IOException e) {
+                e.printStackTrace();
             }
-        } catch (IOException e) {
-            e.printStackTrace();
         }
     }
 
@@ -69,17 +85,16 @@ public class ChunkIO {
      * @return le chunk chargé ou null si le chunk n'existe pas ou ne peut pas être chargé
      */
     public Chunk loadChunk(int chunkX, int chunkZ) {
-        Path chunkFile = getChunkFile(chunkX, chunkZ);
-
-        if (!Files.exists(chunkFile)) {
-            return null;
-        }
-
-        try {
-            byte[] decompressed = ZLibUtils.decompress(Files.newInputStream(chunkFile).readAllBytes());
-
-            try (ObjectInputStream ois = new ObjectInputStream(
-                    new ByteArrayInputStream(decompressed))) {
+        long chunkKey = (((long)chunkX) << 32) ^ (chunkZ & 0xffffffffL);
+        Object lock = chunkLocks.computeIfAbsent(chunkKey, k -> new Object());
+        synchronized (lock) {
+            Path chunkFile = getChunkFile(chunkX, chunkZ);
+            if (!Files.exists(chunkFile)) {
+                return null;
+            }
+            try (FileInputStream fis = new FileInputStream(chunkFile.toFile());
+                 BufferedInputStream bis = new BufferedInputStream(fis);
+                 ObjectInputStream ois = new ObjectInputStream(bis)) {
 
                 // Lecture des métadonnées
                 int originX = ois.readInt();
@@ -89,15 +104,14 @@ public class ChunkIO {
                 // Création du chunk
                 Chunk chunk = new Chunk(world, originX, originZ);
 
-                // Chargement des blocs
-                for (int x = 0; x < Chunk.CHUNK_X; x++) {
-                    for (int y = 0; y < Chunk.CHUNK_Y; y++) {
-                        for (int z = 0; z < Chunk.CHUNK_Z; z++) {
-                            int blockId = ois.readInt();
-                            chunk.setBlockId(x, y, z, blockId);
-                        }
-                    }
-                }
+                // Chargement des blocs compressés RLE
+                int[] blocks = new int[Chunk.CHUNK_X * Chunk.CHUNK_Y * Chunk.CHUNK_Z];
+                readRLEIntArray(ois, blocks);
+                int idx = 0;
+                for (int x = 0; x < Chunk.CHUNK_X; x++)
+                    for (int y = 0; y < Chunk.CHUNK_Y; y++)
+                        for (int z = 0; z < Chunk.CHUNK_Z; z++)
+                            chunk.setBlockId(x, y, z, blocks[idx++]);
 
                 // Restauration de la version sans déclencher de nouveau bump
                 chunk.setVersion(version);
@@ -107,8 +121,6 @@ public class ChunkIO {
                 e.printStackTrace();
                 return null;
             }
-        } catch (IOException e) {
-            throw new RuntimeException(e);
         }
     }
 
@@ -145,6 +157,20 @@ public class ChunkIO {
         }
     }
 
+    /**
+     * Sauvegarde un chunk de façon asynchrone
+     */
+    public void saveChunkAsync(Chunk chunk) {
+        saveExecutor.submit(() -> saveChunk(chunk));
+    }
+
+    /**
+     * Arrête proprement l'executor de sauvegarde
+     */
+    public void shutdown() {
+        saveExecutor.shutdown();
+    }
+
     private Path getRegionDirectory(int chunkX, int chunkZ) {
         // Organise les chunks en régions de 32x32 chunks
         int regionX = Math.floorDiv(chunkX, 32);
@@ -155,5 +181,34 @@ public class ChunkIO {
     private Path getChunkFile(int chunkX, int chunkZ) {
         Path regionDir = getRegionDirectory(chunkX, chunkZ);
         return regionDir.resolve("chunk_" + chunkX + "_" + chunkZ + ".dat");
+    }
+
+    // --- Compression RLE simple pour les blockIds ---
+    private void writeRLEIntArray(ObjectOutputStream oos, int[] data) throws IOException {
+        int n = data.length;
+        int i = 0;
+        while (i < n) {
+            int value = data[i];
+            int runLength = 1;
+            while (i + runLength < n && data[i + runLength] == value && runLength < 0x7FFF) {
+                runLength++;
+            }
+            oos.writeInt(value);
+            oos.writeShort(runLength); // 2 octets pour la taille du run
+            i += runLength;
+        }
+        oos.writeInt(Integer.MIN_VALUE); // marqueur de fin
+    }
+
+    private void readRLEIntArray(ObjectInputStream ois, int[] data) throws IOException {
+        int i = 0;
+        while (i < data.length) {
+            int value = ois.readInt();
+            if (value == Integer.MIN_VALUE) break;
+            int runLength = ois.readShort() & 0xFFFF;
+            for (int j = 0; j < runLength && i < data.length; j++) {
+                data[i++] = value;
+            }
+        }
     }
 }
