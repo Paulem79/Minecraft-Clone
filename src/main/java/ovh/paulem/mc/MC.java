@@ -74,6 +74,8 @@ public class MC {
     // Affichage des bordures de chunk (F3+G)
     public static boolean showChunkBorders = false;
 
+    private SoundPlayer soundPlayer;
+
     public void run() throws Exception {
         init();
         loop();
@@ -138,6 +140,9 @@ public class MC {
             t.setDaemon(true);
             return t;
         });
+
+        soundPlayer = new SoundPlayer();
+        soundPlayer.play("/sounds/test.mp3");
 
         lastTimeNanos = System.nanoTime();
     }
