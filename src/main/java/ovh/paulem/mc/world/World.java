@@ -85,7 +85,7 @@ public class World {
         try {
             Chunk c = f.get();
             if (c == null) return false;
-            int id = c.getBlockId(lx, y, lz);
+            byte id = c.getBlockId(lx, y, lz);
             Block block = Blocks.blocks.get(id);
             return block != null && block.isBlock() && !block.isTransparent();
         } catch (Exception e) {
@@ -104,7 +104,7 @@ public class World {
         try {
             Chunk c = f.get();
             if (c == null) return false;
-            int id = c.getBlockId(lx, y, lz);
+            byte id = c.getBlockId(lx, y, lz);
             Block block = Blocks.blocks.get(id);
             return block != null && !block.isBlock();
         } catch (Exception e) {
@@ -241,7 +241,7 @@ public class World {
             if (c == null) return null;
             int lx = Math.floorMod(x, Chunk.CHUNK_X);
             int lz = Math.floorMod(z, Chunk.CHUNK_Z);
-            int id = c.getBlockId(lx, y, lz);
+            byte id = c.getBlockId(lx, y, lz);
             return Blocks.blocks.get(id);
         } catch (Exception e) {
             return null;
