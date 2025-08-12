@@ -160,7 +160,12 @@ public class MC {
                 frameCount = 0;
                 fpsTimer = 0;
 
-                glfwSetWindowTitle(window, "Minecraft Clone - FPS: " + currentFps + " Looking: " + player.getLookingDirection());
+                Vector3f position = player.getPosition();
+                glfwSetWindowTitle(window, "Minecraft Clone - FPS: " + currentFps +
+                        " Looking: " + player.getLookingDirection() +
+                        " Coords: X: " + String.format("%.2f", position.x) +
+                        " Y: " + String.format("%.2f", position.y) +
+                        " Z: " + String.format("%.2f", position.z));
             }
 
             // Détection des clics souris pour poser/casser des blocs
