@@ -47,12 +47,12 @@ public class ChunkIO {
 
                 try (FileOutputStream fos = new FileOutputStream(tempFile.toFile());
                      BufferedOutputStream bos = new BufferedOutputStream(fos);
-                     ObjectOutputStream oos = new ObjectOutputStream(bos)) {
+                     DataOutputStream dos = new DataOutputStream(bos)) {
 
                     // Sauvegarde des métadonnées du chunk
-                    oos.writeInt(chunk.getOriginX());
-                    oos.writeInt(chunk.getOriginZ());
-                    oos.writeInt(chunk.getVersion());
+                    dos.writeInt(chunk.getOriginX());
+                    dos.writeInt(chunk.getOriginZ());
+                    dos.writeInt(chunk.getVersion());
 
                     // Sauvegarde des blocs compressés RLE
                     int[] blocks = new int[Chunk.CHUNK_X * Chunk.CHUNK_Y * Chunk.CHUNK_Z];
@@ -61,8 +61,8 @@ public class ChunkIO {
                         for (int y = 0; y < Chunk.CHUNK_Y; y++)
                             for (int z = 0; z < Chunk.CHUNK_Z; z++)
                                 blocks[idx++] = chunk.getBlockId(x, y, z);
-                    writeRLEIntArray(oos, blocks);
-                    oos.flush();
+                    writeRLEIntArray(dos, blocks);
+                    dos.flush();
                 }
                 try {
                     Files.move(tempFile, chunkFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
@@ -94,19 +94,19 @@ public class ChunkIO {
             }
             try (FileInputStream fis = new FileInputStream(chunkFile.toFile());
                  BufferedInputStream bis = new BufferedInputStream(fis);
-                 ObjectInputStream ois = new ObjectInputStream(bis)) {
+                 DataInputStream dis = new DataInputStream(bis)) {
 
                 // Lecture des métadonnées
-                int originX = ois.readInt();
-                int originZ = ois.readInt();
-                int version = ois.readInt();
+                int originX = dis.readInt();
+                int originZ = dis.readInt();
+                int version = dis.readInt();
 
                 // Création du chunk
                 Chunk chunk = new Chunk(world, originX, originZ);
 
                 // Chargement des blocs compressés RLE
                 int[] blocks = new int[Chunk.CHUNK_X * Chunk.CHUNK_Y * Chunk.CHUNK_Z];
-                readRLEIntArray(ois, blocks);
+                readRLEIntArray(dis, blocks);
                 int idx = 0;
                 for (int x = 0; x < Chunk.CHUNK_X; x++)
                     for (int y = 0; y < Chunk.CHUNK_Y; y++)
@@ -184,29 +184,29 @@ public class ChunkIO {
     }
 
     // --- Compression RLE simple pour les blockIds ---
-    private void writeRLEIntArray(ObjectOutputStream oos, int[] data) throws IOException {
-        int n = data.length;
+    private void writeRLEIntArray(DataOutputStream dos, int[] data) throws IOException {
+        final int n = data.length;
         int i = 0;
         while (i < n) {
-            int value = data[i];
+            final int value = data[i];
             int runLength = 1;
-            while (i + runLength < n && data[i + runLength] == value && runLength < 0x7FFF) {
-                runLength++;
-            }
-            oos.writeInt(value);
-            oos.writeShort(runLength); // 2 octets pour la taille du run
+            // This is useful, don't suppress
+            for (; i + runLength < n && data[i + runLength] == value && runLength < 0x7FFF; runLength++);
+            dos.writeInt(value);
+            dos.writeShort(runLength); // 2 octets pour la taille du run
             i += runLength;
         }
-        oos.writeInt(Integer.MIN_VALUE); // marqueur de fin
+        dos.writeInt(Integer.MIN_VALUE); // marqueur de fin
     }
 
-    private void readRLEIntArray(ObjectInputStream ois, int[] data) throws IOException {
+    private void readRLEIntArray(DataInputStream dis, int[] data) throws IOException {
         int i = 0;
         while (i < data.length) {
-            int value = ois.readInt();
+            final int value = dis.readInt();
             if (value == Integer.MIN_VALUE) break;
-            int runLength = ois.readShort() & 0xFFFF;
-            for (int j = 0; j < runLength && i < data.length; j++) {
+            final int runLength = dis.readShort() & 0xFFFF;
+            final int max = Math.min(runLength, data.length - i);
+            for (int j = 0; j < max; j++) {
                 data[i++] = value;
             }
         }
