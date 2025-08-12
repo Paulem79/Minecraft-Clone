@@ -54,14 +54,14 @@ public class ChunkIO {
                     dos.writeInt(chunk.getOriginZ());
                     dos.writeInt(chunk.getVersion());
 
-                    // Sauvegarde des blocs compressés RLE
-                    int[] blocks = new int[Chunk.CHUNK_X * Chunk.CHUNK_Y * Chunk.CHUNK_Z];
+                    // Sauvegarde des blocs compressés RLE (byte)
+                    byte[] blocks = new byte[Chunk.CHUNK_X * Chunk.CHUNK_Y * Chunk.CHUNK_Z];
                     int idx = 0;
                     for (int x = 0; x < Chunk.CHUNK_X; x++)
                         for (int y = 0; y < Chunk.CHUNK_Y; y++)
                             for (int z = 0; z < Chunk.CHUNK_Z; z++)
                                 blocks[idx++] = chunk.getBlockId(x, y, z);
-                    writeRLEIntArray(dos, blocks);
+                    writeRLEByteArray(dos, blocks);
                     dos.flush();
                 }
                 try {
@@ -104,14 +104,14 @@ public class ChunkIO {
                 // Création du chunk
                 Chunk chunk = new Chunk(world, originX, originZ);
 
-                // Chargement des blocs compressés RLE
-                int[] blocks = new int[Chunk.CHUNK_X * Chunk.CHUNK_Y * Chunk.CHUNK_Z];
-                readRLEIntArray(dis, blocks);
+                // Chargement des blocs compressés RLE (byte)
+                byte[] blocks = new byte[Chunk.CHUNK_X * Chunk.CHUNK_Y * Chunk.CHUNK_Z];
+                readRLEByteArray(dis, blocks);
                 int idx = 0;
                 for (int x = 0; x < Chunk.CHUNK_X; x++)
                     for (int y = 0; y < Chunk.CHUNK_Y; y++)
                         for (int z = 0; z < Chunk.CHUNK_Z; z++)
-                            chunk.setBlockId(x, y, z, blocks[idx++]);
+                            chunk.setBlockId(x, y, z, (byte)blocks[idx++]);
 
                 // Restauration de la version sans déclencher de nouveau bump
                 chunk.setVersion(version);
@@ -184,26 +184,29 @@ public class ChunkIO {
     }
 
     // --- Compression RLE simple pour les blockIds ---
-    private void writeRLEIntArray(DataOutputStream dos, int[] data) throws IOException {
+    private void writeRLEByteArray(DataOutputStream dos, byte[] data) throws IOException {
         final int n = data.length;
         int i = 0;
         while (i < n) {
-            final int value = data[i];
+            final byte value = data[i];
             int runLength = 1;
-            // This is useful, don't suppress
             for (; i + runLength < n && data[i + runLength] == value && runLength < 0x7FFF; runLength++);
-            dos.writeInt(value);
+            dos.writeByte(value);
             dos.writeShort(runLength); // 2 octets pour la taille du run
             i += runLength;
         }
-        dos.writeInt(Integer.MIN_VALUE); // marqueur de fin
+        dos.writeByte(Byte.MIN_VALUE); // marqueur de fin
+        dos.writeShort(0); // fin
     }
 
-    private void readRLEIntArray(DataInputStream dis, int[] data) throws IOException {
+    private void readRLEByteArray(DataInputStream dis, byte[] data) throws IOException {
         int i = 0;
         while (i < data.length) {
-            final int value = dis.readInt();
-            if (value == Integer.MIN_VALUE) break;
+            final byte value = dis.readByte();
+            if (value == Byte.MIN_VALUE) {
+                dis.readShort(); // consomme le short de fin
+                break;
+            }
             final int runLength = dis.readShort() & 0xFFFF;
             final int max = Math.min(runLength, data.length - i);
             for (int j = 0; j < max; j++) {

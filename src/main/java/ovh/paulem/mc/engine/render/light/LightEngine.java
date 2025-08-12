@@ -63,12 +63,12 @@ public class LightEngine {
             for (byte z = 0; z < Chunk.CHUNK_Z; z++) {
                 int light = Values.MAX_LIGHT;
                 for (int y = Chunk.CHUNK_Y - 1; y >= 0; y--) {
-                    int blockId = chunk.getBlockId(x, y, z);
+                    byte blockId = chunk.getBlockId(x, y, z);
                     if (isOpaque(blockId)) {
                         light = 0;
                     }
                     chunk.setLightLevel(x, y, z, (byte) light);
-                    if (light > 0 && !isOpaque(blockId)) {
+                    if (light > 0) {
                         if (queue.size() < MAX_LIGHT_QUEUE_SIZE) {
                             queue.add(new byte[]{x, (byte) y, z});
                         } else {
@@ -92,7 +92,7 @@ public class LightEngine {
                 byte nz = (byte) (z + d[2]);
                 if (nx < 0 || nx >= Chunk.CHUNK_X || ny < 0 || ny >= Chunk.CHUNK_Y || nz < 0 || nz >= Chunk.CHUNK_Z)
                     continue;
-                int neighborId = chunk.getBlockId(nx, ny, nz);
+                byte neighborId = chunk.getBlockId(nx, ny, nz);
                 if (isOpaque(neighborId)) continue;
                 byte neighborLight = chunk.getLightLevel(nx, ny, nz);
                 int newLight = (d[1] == -1) ? current : current - 1; // vers le bas : pas d'atténuation
@@ -115,7 +115,7 @@ public class LightEngine {
     }
 
     // Détermine si un bloc est opaque (à adapter selon vos types de blocs)
-    private boolean isOpaque(int blockId) {
+    private boolean isOpaque(byte blockId) {
         // Par défaut, l'air (id 0) n'est pas opaque, les autres le sont
         return blockId != 0;
     }
