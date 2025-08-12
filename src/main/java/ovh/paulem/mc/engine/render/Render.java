@@ -372,10 +372,10 @@ public class Render {
         for (Map.Entry<String, Acc> e : accs.entrySet()) {
             Acc a = e.getValue();
             if (a.inds.isEmpty()) continue;
+            // Utilisation d'un seul passage pour copier les données
             float[] vertices = new float[a.verts.size()];
             for (int i = 0; i < a.verts.size(); i++) vertices[i] = a.verts.get(i);
-            int[] indices = new int[a.inds.size()];
-            for (int i = 0; i < a.inds.size(); i++) indices[i] = a.inds.get(i);
+            int[] indices = a.inds.stream().mapToInt(Integer::intValue).toArray();
             verticesByTexture.put(e.getKey(), vertices);
             indicesByTexture.put(e.getKey(), indices);
         }
@@ -390,33 +390,36 @@ public class Render {
     private RawMeshData buildChunkMeshesGreedyRaw(Chunk chunk) {
         Map<String, Acc> accs = new HashMap<>();
 
-        // Greedy meshing per face direction f
+        // Pré-calcul des tailles pour chaque face
+        final int sizeX = Chunk.CHUNK_X;
+        final int sizeY = Chunk.CHUNK_Y;
+        final int sizeZ = Chunk.CHUNK_Z;
+        // Réutilisation des masques pour limiter les allocations
+        String[][] mask = new String[Math.max(sizeY, sizeZ)][Math.max(sizeY, sizeZ)];
+        boolean[][] used = new boolean[mask.length][mask.length];
+
         for (int f = 0; f < 6; f++) {
-            // For each face, we define which axes are in-plane (u,v) and which is the slice axis (w)
-            // Also define normal for this face
             Vector3f normal = NORMALS[f];
-            int sizeX = Chunk.CHUNK_X;
-            int sizeY = Chunk.CHUNK_Y;
-            int sizeZ = Chunk.CHUNK_Z;
             int uSize, vSize, wSize;
-            // Mapping functions depend on f
-            // We'll iterate slices along w, and for each build a u-v mask of texture strings
             switch (f) {
-                case 0: // +X: plane (u=z, v=y), slices over x
-                case 1: // -X
+                case 0: case 1:
                     uSize = sizeZ; vSize = sizeY; wSize = sizeX;
                     break;
-                case 2: // +Y: plane (u=x, v=z), slices over y
-                case 3: // -Y
+                case 2: case 3:
                     uSize = sizeX; vSize = sizeZ; wSize = sizeY;
                     break;
-                default: // 4:+Z, 5:-Z -> plane (u=x, v=y), slices over z
+                default:
                     uSize = sizeX; vSize = sizeY; wSize = sizeZ;
                     break;
             }
-
             for (int w = 0; w < wSize; w++) {
-                String[][] mask = new String[uSize][vSize];
+                // Réinitialisation des masques sans recréer les tableaux
+                for (int v = 0; v < vSize; v++) {
+                    for (int u = 0; u < uSize; u++) {
+                        mask[u][v] = null;
+                        used[u][v] = false;
+                    }
+                }
                 // Fill mask with texture name when the face at (u,v,w) is visible
                 for (int v = 0; v < vSize; v++) {
                     for (int u = 0; u < uSize; u++) {
@@ -457,7 +460,6 @@ public class Render {
                 }
 
                 // Greedy merge rectangles of same texture in mask
-                boolean[][] used = new boolean[uSize][vSize];
                 for (int v = 0; v < vSize; v++) {
                     for (int u = 0; u < uSize; u++) {
                         if (used[u][v]) continue;
@@ -503,18 +505,9 @@ public class Render {
                             if (world != null) {
                                 int wx, wz;
                                 wz = switch (f) {
-                                    case 0, 1 -> {
-                                        wx = chunk.getOriginX() + w;
-                                        yield chunk.getOriginZ() + u;
-                                    }
-                                    case 2, 3 -> {
-                                        wx = chunk.getOriginX() + u;
-                                        yield chunk.getOriginZ() + v;
-                                    }
-                                    default -> {
-                                        wx = chunk.getOriginX() + u;
-                                        yield chunk.getOriginZ() + w;
-                                    }
+                                    case 0, 1 -> { wx = chunk.getOriginX() + w; yield chunk.getOriginZ() + u; }
+                                    case 2, 3 -> { wx = chunk.getOriginX() + u; yield chunk.getOriginZ() + v; }
+                                    default -> { wx = chunk.getOriginX() + u; yield chunk.getOriginZ() + w; }
                                 };
                                 Biome biome = world.getBiomeAt(wx, wz);
                                 Vector3f color = biome.getByTint(tintable.getTintType());
