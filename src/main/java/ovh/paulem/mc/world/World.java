@@ -14,10 +14,18 @@ import java.util.concurrent.*;
 
 public class World {
 
-    private final Map<Long, Chunk> chunks = new ConcurrentHashMap<>();
+    // Remplace Map<Long, Chunk> par Map<Long, Future<Chunk>> pour éviter les chargements multiples
+    private final Map<Long, Future<Chunk>> chunkFutures = new ConcurrentHashMap<>();
 
     public Collection<Chunk> getChunks() {
-        return chunks.values();
+        List<Chunk> result = new ArrayList<>();
+        for (Future<Chunk> f : chunkFutures.values()) {
+            try {
+                Chunk c = f.get();
+                if (c != null) result.add(c);
+            } catch (Exception ignored) {}
+        }
+        return result;
     }
 
     @Getter
@@ -186,12 +194,17 @@ public class World {
         int cz = Math.floorDiv(z, Chunk.CHUNK_Z);
         int lx = Math.floorMod(x, Chunk.CHUNK_X);
         int lz = Math.floorMod(z, Chunk.CHUNK_Z);
-        Chunk c = chunks.get(key(cx, cz));
-        if (c == null) return false;
-        int id = c.getBlockId(lx, y, lz);
-        Block block = Blocks.blocks.get(id);
-        // Un bloc est solide s'il n'est pas de l'air ET n'est pas transparent
-        return block != null && block.isBlock() && !block.isTransparent();
+        Future<Chunk> f = chunkFutures.get(key(cx, cz));
+        if (f == null) return false;
+        try {
+            Chunk c = f.get();
+            if (c == null) return false;
+            int id = c.getBlockId(lx, y, lz);
+            Block block = Blocks.blocks.get(id);
+            return block != null && block.isBlock() && !block.isTransparent();
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     public boolean isPassable(int x, int y, int z) {
@@ -200,24 +213,140 @@ public class World {
         int cz = Math.floorDiv(z, Chunk.CHUNK_Z);
         int lx = Math.floorMod(x, Chunk.CHUNK_X);
         int lz = Math.floorMod(z, Chunk.CHUNK_Z);
-        Chunk c = chunks.get(key(cx, cz));
-        if (c == null) return false;
-        int id = c.getBlockId(lx, y, lz);
-        Block block = Blocks.blocks.get(id);
-        // Un bloc est solide s'il n'est pas de l'air ET n'est pas transparent
-        return block != null && !block.isBlock();
+        Future<Chunk> f = chunkFutures.get(key(cx, cz));
+        if (f == null) return false;
+        try {
+            Chunk c = f.get();
+            if (c == null) return false;
+            int id = c.getBlockId(lx, y, lz);
+            Block block = Blocks.blocks.get(id);
+            return block != null && !block.isBlock();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // Nouvelle méthode pour la génération synchrone (extrait de scheduleGeneration)
+    private void generateChunk(Chunk chunk, int cx, int cz) {
+        final int baseX = chunk.getOriginX();
+        final int baseZ = chunk.getOriginZ();
+        // Génération du terrain de base
+        for (int x = 0; x < Chunk.CHUNK_X; x++) {
+            for (int z = 0; z < Chunk.CHUNK_Z; z++) {
+                double wx = (baseX + x) * 0.05;
+                double wz = (baseZ + z) * 0.05;
+                double amp = 1.0;
+                double freq = 1.0;
+                double sum = 0.0;
+                double ampSum = 0.0;
+                for (int o = 0; o < 4; o++) {
+                    sum += noise.noise(wx * freq, wz * freq) * amp;
+                    ampSum += amp;
+                    amp *= 0.5;
+                    freq *= 2.0;
+                }
+                double n = sum / ampSum;
+                double height = (n + 1.0) * 0.5 * 48.0 + 40.0;
+                int h = (int) height;
+                if (h >= Chunk.CHUNK_Y) h = Chunk.CHUNK_Y - 1;
+                for (int y = 0; y < Chunk.CHUNK_Y; y++) {
+                    if (y <= h) {
+                        if (y == h) chunk.setBlock(x, y, z, Blocks.GRASS_BLOCK);
+                        else if (y > h - 4) chunk.setBlock(x, y, z, Blocks.DIRT);
+                        else chunk.setBlock(x, y, z, Blocks.STONE);
+                    } else {
+                        chunk.setBlock(x, y, z, Blocks.AIR);
+                    }
+                }
+            }
+        }
+        // Génération des caves (copier le code existant)
+        for (int x = 0; x < Chunk.CHUNK_X; x++) {
+            for (int z = 0; z < Chunk.CHUNK_Z; z++) {
+                for (int y = Values.MIN_CAVE_HEIGHT; y < Values.MAX_CAVE_HEIGHT; y++) {
+                    // Ne pas générer des caves dans l'air
+                    if (!chunk.getBlock(x, y, z).isBlock()) {
+                        continue;
+                    }
+
+                    // Coordonnées absolues pour les différents bruits
+                    double wx = (baseX + x) * Values.BASE_CAVE_SCALE;
+                    double wy = y * Values.BASE_CAVE_SCALE;
+                    double wz = (baseZ + z) * Values.BASE_CAVE_SCALE;
+
+                    // Coordonnées pour les variations de taille et de plancher
+                    double wx2 = (baseX + x) * Values.SIZE_NOISE_SCALE;
+                    double wy2 = y * Values.SIZE_NOISE_SCALE;
+                    double wz2 = (baseZ + z) * Values.SIZE_NOISE_SCALE;
+
+                    double wx3 = (baseX + x) * Values.FLOOR_NOISE_SCALE;
+                    double wz3 = (baseZ + z) * Values.FLOOR_NOISE_SCALE;
+
+                    // Bruit de base pour les caves
+                    double caveValue = caveNoise.noise(wx, wy, wz);
+
+                    // Variation de la taille des cavernes
+                    double sizeVariation = caveSizeNoise.noise(wx2, wy2, wz2) * 0.5 + 0.5; // 0-1
+
+                    // Variation du plancher (pour éviter les fonds plats)
+                    double floorVariation = caveFloorNoise.noise(wx3, wz3) * Values.FLOOR_VARIATION_AMPLITUDE;
+
+                    // Ajustement du seuil en fonction de la hauteur (transitions graduelles près du fond)
+                    double threshold = Values.CAVE_THRESHOLD;
+
+                    // Réduire progressivement la probabilité des caves près du fond
+                    if (y < Values.MIN_CAVE_HEIGHT + Values.TRANSITION_HEIGHT) {
+                        // Plus on est proche du fond, plus le seuil est élevé (moins de chances de générer une cave)
+                        double factor = (double)(y - Values.MIN_CAVE_HEIGHT) / Values.TRANSITION_HEIGHT;
+                        threshold = Values.CAVE_THRESHOLD + (1.0 - factor) * 0.4; // 0.4 est l'augmentation maximale du seuil
+                    }
+
+                    // Ajouter des variations de plancher basées sur le bruit
+                    int effectiveMinHeight = Values.MIN_CAVE_HEIGHT;
+                    if (y < Values.MIN_CAVE_HEIGHT + Values.FLOOR_VARIATION_AMPLITUDE) {
+                        // Vérifier si ce bloc est au-dessus du plancher ondulé
+                        int adjustedFloorHeight = Values.MIN_CAVE_HEIGHT + (int)floorVariation;
+                        if (y < adjustedFloorHeight) {
+                            continue; // Ne pas creuser sous le plancher ondulé
+                        }
+                    }
+
+                    // Ajuster le seuil en fonction de la taille pour créer des cavernes de tailles variées
+                    double adjustedThreshold = threshold - sizeVariation * Values.SIZE_VARIATION;
+
+                    // Si la valeur est supérieure au seuil, créer une cavité
+                    if (caveValue > adjustedThreshold) {
+                        chunk.setBlock(x, y, z, Blocks.AIR);
+
+                        // Occasionnellement étendre verticalement pour créer des cavernes plus hautes
+                        if (sizeVariation > 0.7 && y + 1 < Values.MAX_CAVE_HEIGHT && chunk.getBlock(x, y + 1, z).isBlock()) {
+                            chunk.setBlock(x, y + 1, z, Blocks.AIR);
+                        }
+                    }
+                }
+            }
+        }
+        chunk.bumpVersion();
+        chunk.bakeLight();
     }
 
     public Block getBlock(int x, int y, int z) {
         if (y < 0 || y >= Chunk.CHUNK_Y) return null;
         int cx = Math.floorDiv(x, Chunk.CHUNK_X);
         int cz = Math.floorDiv(z, Chunk.CHUNK_Z);
-        int lx = Math.floorMod(x, Chunk.CHUNK_X);
-        int lz = Math.floorMod(z, Chunk.CHUNK_Z);
-        Chunk c = chunks.get(key(cx, cz));
-        if (c == null) return null;
-        int id = c.getBlockId(lx, y, lz);
-        return Blocks.blocks.get(id);
+        long k = key(cx, cz);
+        Future<Chunk> f = chunkFutures.get(k);
+        if (f == null) return null;
+        try {
+            Chunk c = f.get();
+            if (c == null) return null;
+            int lx = Math.floorMod(x, Chunk.CHUNK_X);
+            int lz = Math.floorMod(z, Chunk.CHUNK_Z);
+            int id = c.getBlockId(lx, y, lz);
+            return Blocks.blocks.get(id);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     public void update(float playerX, float playerZ) {
@@ -242,31 +371,21 @@ public class World {
                 int cz = centerCz + dz;
                 long k = key(cx, cz);
 
-                // Si le chunk n'est pas chargé en mémoire
-                if (!chunks.containsKey(k)) {
-                    // Vérifier s'il existe sur le disque avant de le créer
+                chunkFutures.computeIfAbsent(k, key -> chunkExecutor.submit(() -> {
+                    // Tente de charger depuis le disque
                     Chunk loadedChunk = chunkIO.loadChunk(cx, cz);
-
                     if (loadedChunk != null) {
-                        // Le chunk a été chargé depuis le disque
-                        chunks.put(k, loadedChunk);
+                        return loadedChunk;
                     } else {
-                        // Le chunk n'existe pas, on le crée et on programme sa génération
+                        // Génère le chunk si absent
                         Chunk chunk = createChunk(cx, cz);
-                        chunks.put(k, chunk);
-
-                        // Programmer la génération si nécessaire
                         if (chunk.getVersion() == 0) {
-                            scheduleGeneration(k, chunk, cx, cz);
+                            // Génération synchrone ici (sinon il faudrait chaîner les futures)
+                            generateChunk(chunk, cx, cz);
                         }
+                        return chunk;
                     }
-                } else {
-                    // Le chunk est déjà chargé, vérifier s'il faut générer
-                    Chunk chunk = chunks.get(k);
-                    if (chunk.getVersion() == 0) {
-                        scheduleGeneration(k, chunk, cx, cz);
-                    }
-                }
+                }));
             }
         }
     }
@@ -275,42 +394,29 @@ public class World {
      * Décharge les chunks qui sont trop éloignés du joueur et sauvegarde les chunks modifiés
      */
     private void unloadDistantChunks(int playerCx, int playerCz) {
-        // Rayon de déchargement = renderRadius + unloadBuffer
         int unloadRadius = Values.RENDER_RADIUS + unloadBuffer;
         int unloadRadiusSq = unloadRadius * unloadRadius;
-
-        // Créer une liste des chunks à décharger pour éviter ConcurrentModificationException
         List<Long> chunksToUnload = new ArrayList<>();
-
-        // Parcourir tous les chunks chargés
-        for (Map.Entry<Long, Chunk> entry : chunks.entrySet()) {
+        for (Map.Entry<Long, Future<Chunk>> entry : chunkFutures.entrySet()) {
             long key = entry.getKey();
-            Chunk chunk = entry.getValue();
-
-            // Extraire les coordonnées du chunk
-            int cx = chunk.getOriginX() / Chunk.CHUNK_X;
-            int cz = chunk.getOriginZ() / Chunk.CHUNK_Z;
-
-            // Calculer la distance au carré entre le chunk et le joueur
-            int dx = cx - playerCx;
-            int dz = cz - playerCz;
-            int distSq = dx*dx + dz*dz;
-
-            // Si le chunk est trop loin du joueur
-            if (distSq > unloadRadiusSq) {
-                // S'il est modifié, le sauvegarder d'abord
-                if (chunk.isDirty()) {
-                    saveChunk(chunk);
+            try {
+                Chunk chunk = entry.getValue().get();
+                if (chunk == null) continue;
+                int cx = chunk.getOriginX() / Chunk.CHUNK_X;
+                int cz = chunk.getOriginZ() / Chunk.CHUNK_Z;
+                int dx = cx - playerCx;
+                int dz = cz - playerCz;
+                int distSq = dx*dx + dz*dz;
+                if (distSq > unloadRadiusSq) {
+                    if (chunk.isDirty()) {
+                        saveChunk(chunk);
+                    }
+                    chunksToUnload.add(key);
                 }
-
-                // Ajouter à la liste des chunks à décharger
-                chunksToUnload.add(key);
-            }
+            } catch (Exception ignored) {}
         }
-
-        // Décharger les chunks
         for (Long key : chunksToUnload) {
-            chunks.remove(key);
+            chunkFutures.remove(key);
         }
     }
 
@@ -325,10 +431,13 @@ public class World {
     // Gracefully shutdown background generation threads
     public void shutdown() {
         // Sauvegarder tous les chunks modifiés avant de fermer
-        for (Chunk chunk : chunks.values()) {
-            if (chunk.isDirty()) {
-                saveChunk(chunk);
-            }
+        for (Future<Chunk> f : chunkFutures.values()) {
+            try {
+                Chunk chunk = f.get();
+                if (chunk != null && chunk.isDirty()) {
+                    saveChunk(chunk);
+                }
+            } catch (Exception ignored) {}
         }
 
         // Fermer le thread pool
@@ -406,6 +515,12 @@ public class World {
     @Nullable
     public Chunk getChunk(int cx, int cz) {
         long k = key(cx, cz);
-        return chunks.get(k);
+        Future<Chunk> f = chunkFutures.get(k);
+        if (f == null) return null;
+        try {
+            return f.get();
+        } catch (Exception e) {
+            return null;
+        }
     }
 }
