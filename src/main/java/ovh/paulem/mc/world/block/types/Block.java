@@ -52,6 +52,10 @@ public abstract class Block {
 
     public abstract void serveTextures(Map<String, Texture> textureCache);
 
+    public String[] getSounds() {
+        return new String[]{"Grass_dig1", "Grass_dig2", "Grass_dig3", "Grass_dig4"};
+    }
+
     public boolean isTransparent() {
         return transparent;
     }

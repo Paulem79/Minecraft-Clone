@@ -30,13 +30,14 @@ dependencies {
     implementation("org.lwjgl:lwjgl-glfw")
     implementation("org.lwjgl:lwjgl-opengl")
     implementation("org.lwjgl:lwjgl-stb")
-    implementation("javazoom:jlayer:1.0.1")
+    implementation("org.lwjgl:lwjgl-openal")
 
     // Natives Windows (DLL) nécessaires au runtime
     runtimeOnly("org.lwjgl:lwjgl::natives-windows")
     runtimeOnly("org.lwjgl:lwjgl-glfw::natives-windows")
     runtimeOnly("org.lwjgl:lwjgl-opengl::natives-windows")
     runtimeOnly("org.lwjgl:lwjgl-stb::natives-windows")
+    runtimeOnly("org.lwjgl:lwjgl-openal::natives-windows")
 }
 
 application {

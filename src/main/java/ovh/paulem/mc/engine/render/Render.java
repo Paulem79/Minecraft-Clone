@@ -1,6 +1,7 @@
 package ovh.paulem.mc.engine.render;
 
 import ovh.paulem.mc.MC;
+import ovh.paulem.mc.Values;
 import ovh.paulem.mc.engine.Camera;
 import ovh.paulem.mc.engine.Hotbar;
 import ovh.paulem.mc.engine.Window;
@@ -37,7 +38,6 @@ public class Render {
             new Vector3f( 0, 1, 0), new Vector3f( 0,-1, 0),
             new Vector3f( 0, 0, 1), new Vector3f( 0, 0,-1)
     };
-    public static final float GREEDY_DIST = 80.0f;
 
     public record MeshBatch(Mesh mesh, Texture texture, String texturePath) {
     }
@@ -54,7 +54,6 @@ public class Render {
 
     // Queue of chunks that need mesh (re)build; processed with small budget per frame to avoid spikes
     private final ArrayDeque<Chunk> meshBuildQueue = new ArrayDeque<>();
-    private final int meshesPerFrameBudget = 2;
 
     // Ajout d'un ExecutorService pour le meshing parallèle
     private final ExecutorService meshExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
@@ -138,7 +137,7 @@ public class Render {
         if (world != null) {
             // Rebuild up to a small number of chunk meshes per frame to avoid spikes
             int rebuilt = 0;
-            while (rebuilt < meshesPerFrameBudget && !meshBuildQueue.isEmpty()) {
+            while (rebuilt < Values.MESHES_PER_FRAME_BUDGET && !meshBuildQueue.isEmpty()) {
                 Chunk qc = meshBuildQueue.pollFirst();
                 if (qc == null) break;
                 // Determine greedy based on current camera distance
@@ -147,7 +146,7 @@ public class Render {
                 float qdx = camera.getPosition().x - qccx;
                 float qdz = camera.getPosition().z - qccz;
                 float qdist = (float)Math.sqrt(qdx * qdx + qdz * qdz);
-                boolean qGreedy = qdist > 80.0f;
+                boolean qGreedy = qdist > Values.GREEDY_DIST;
                 int qver = qc.getVersion();
                 // Lancer la génération du mesh en tâche asynchrone si pas déjà en cours
                 if (!meshFutures.containsKey(qc)) {
@@ -186,7 +185,7 @@ public class Render {
                 float dx = camX - chunkCenterX;
                 float dz = camZ - chunkCenterZ;
                 float dist = (float) Math.sqrt(dx * dx + dz * dz);
-                boolean useGreedy = dist > GREEDY_DIST;
+                boolean useGreedy = dist > Values.GREEDY_DIST;
 
                 ChunkMesh cm = meshCache.get(c);
                 int ver = c.getVersion();

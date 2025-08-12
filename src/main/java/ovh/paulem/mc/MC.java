@@ -6,6 +6,7 @@ import ovh.paulem.mc.engine.Hotbar;
 import ovh.paulem.mc.engine.Player;
 import ovh.paulem.mc.engine.Window;
 import ovh.paulem.mc.engine.render.Render;
+import ovh.paulem.mc.math.ArraysUtils;
 import ovh.paulem.mc.world.World;
 import org.joml.Vector2d;
 import org.joml.Vector3f;
@@ -74,6 +75,7 @@ public class MC {
     // Affichage des bordures de chunk (F3+G)
     public static boolean showChunkBorders = false;
 
+    @Getter
     private SoundPlayer soundPlayer;
 
     public void run() throws Exception {
@@ -142,7 +144,6 @@ public class MC {
         });
 
         soundPlayer = new SoundPlayer();
-        soundPlayer.play("/sounds/test.mp3");
 
         lastTimeNanos = System.nanoTime();
     }
@@ -404,6 +405,7 @@ public class MC {
             world.setBlock(result.x, result.y, result.z, Blocks.AIR);
             // Générer les particules si ce n'est pas de l'air
             if (block != null && block.isBlock()) {
+                getSoundPlayer().play("/sounds/" + ArraysUtils.getRandom(block.getSounds()) + ".ogg");
                 MC.INSTANCE.getRender().spawnBlockParticles(new Vector3f(result.x+0.5f, result.y+0.5f, result.z+0.5f), block);
             }
         }

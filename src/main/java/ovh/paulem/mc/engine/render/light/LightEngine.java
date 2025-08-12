@@ -1,6 +1,7 @@
 package ovh.paulem.mc.engine.render.light;
 
 import lombok.Getter;
+import ovh.paulem.mc.Values;
 import ovh.paulem.mc.world.Chunk;
 import java.util.ArrayDeque;
 import java.util.Queue;
@@ -9,8 +10,6 @@ import java.util.Set;
 import java.util.HashSet;
 
 public class LightEngine {
-    // Taille maximale de la lumière (0 = obscurité, 15 = lumière maximale)
-    public static final int MAX_LIGHT = 15;
 
     // File d'attente des chunks à éclairer
     private final Queue<Chunk> lightQueue = new ArrayDeque<>();
@@ -19,8 +18,7 @@ public class LightEngine {
     // Thread pool pour la lumière
     @Getter
     private final ExecutorService lightExecutor = Executors.newFixedThreadPool(Math.max(1, Runtime.getRuntime().availableProcessors() / 2));
-    // Budget de chunks à traiter par frame
-    private final int lightPerFrameBudget = 5;
+    private static final int MAX_LIGHT_QUEUE_SIZE = 100_000;
 
     public LightEngine() {
         // Initialisation du moteur de lumière
@@ -38,7 +36,7 @@ public class LightEngine {
     // À appeler à chaque frame (depuis World ou Render)
     public void processLightQueue() {
         int processed = 0;
-        while (processed < lightPerFrameBudget) {
+        while (processed < Values.LIGHT_PER_FRAME_BUDGET) {
             Chunk chunk;
             synchronized (lightQueue) {
                 chunk = lightQueue.poll();
@@ -63,7 +61,7 @@ public class LightEngine {
         Queue<int[]> queue = new ArrayDeque<>();
         for (int x = 0; x < Chunk.CHUNK_X; x++) {
             for (int z = 0; z < Chunk.CHUNK_Z; z++) {
-                int light = MAX_LIGHT;
+                int light = Values.MAX_LIGHT;
                 for (int y = Chunk.CHUNK_Y - 1; y >= 0; y--) {
                     int blockId = chunk.getBlockId(x, y, z);
                     if (isOpaque(blockId)) {
@@ -71,8 +69,12 @@ public class LightEngine {
                     }
                     chunk.setLightLevel(x, y, z, (byte) light);
                     if (light > 0 && !isOpaque(blockId)) {
-                        // Ajouter à la file pour la propagation horizontale
-                        queue.add(new int[]{x, y, z});
+                        if (queue.size() < MAX_LIGHT_QUEUE_SIZE) {
+                            queue.add(new int[]{x, y, z});
+                        } else {
+                            System.err.println("[LightEngine] Limite de queue atteinte lors de la propagation verticale, arrêt de la propagation.");
+                            return;
+                        }
                     }
                 }
             }
@@ -96,7 +98,12 @@ public class LightEngine {
                 int newLight = (d[1] == -1) ? current : current - 1; // vers le bas : pas d'atténuation
                 if (newLight > 0 && neighborLight < newLight) {
                     chunk.setLightLevel(nx, ny, nz, (byte) newLight);
-                    queue.add(new int[]{nx, ny, nz});
+                    if (queue.size() < MAX_LIGHT_QUEUE_SIZE) {
+                        queue.add(new int[]{nx, ny, nz});
+                    } else {
+                        System.err.println("[LightEngine] Limite de queue atteinte lors de la propagation horizontale, arrêt de la propagation.");
+                        return;
+                    }
                 }
             }
         }

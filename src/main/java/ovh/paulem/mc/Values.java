@@ -2,7 +2,13 @@ package ovh.paulem.mc;
 
 public class Values {
     // Rayon de rendu des chunks autour du joueur
-    public static final int RENDER_RADIUS = 5;
+    public static final int RENDER_RADIUS = 8;
+    // Taille maximale de la lumière (0 = obscurité, 15 = lumière maximale)
+    public static final int MAX_LIGHT = 15;
+    // Budget de chunks à traiter par frame
+    public static final int LIGHT_PER_FRAME_BUDGET = RENDER_RADIUS*5;
+    public static final int MESHES_PER_FRAME_BUDGET = RENDER_RADIUS/4;
+    public static final float GREEDY_DIST = 0.0f;
 
     // Configuration des caves
     public static double BASE_CAVE_SCALE = 0.05; // Échelle de base du bruit pour les caves
