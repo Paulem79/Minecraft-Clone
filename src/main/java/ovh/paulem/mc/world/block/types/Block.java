@@ -1,5 +1,6 @@
 package ovh.paulem.mc.world.block.types;
 
+import lombok.Getter;
 import ovh.paulem.mc.engine.render.texture.Texture;
 import ovh.paulem.mc.engine.render.texture.Textures;
 import ovh.paulem.mc.world.block.Face;
@@ -8,6 +9,7 @@ import java.util.Map;
 
 import static ovh.paulem.mc.world.block.Blocks.AIR;
 
+@Getter
 public abstract class Block {
     protected final String name;
     private final int id;
@@ -21,12 +23,6 @@ public abstract class Block {
         this.name = name;
         this.id = id;
         this.transparent = transparent;
-    }
-
-    public int getId() { return id; }
-
-    public String getName() {
-        return name;
     }
 
     public String getFaceTextureName(Face face) {
@@ -54,10 +50,6 @@ public abstract class Block {
 
     public String[] getSounds() {
         return new String[]{"Grass_dig1", "Grass_dig2", "Grass_dig3", "Grass_dig4"};
-    }
-
-    public boolean isTransparent() {
-        return transparent;
     }
 
     public boolean isBlock() { return this != AIR; }
