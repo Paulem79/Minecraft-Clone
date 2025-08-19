@@ -600,7 +600,7 @@ public class Render {
         Map<String, Acc> accs = new HashMap<>();
 
         for (int x = 0; x < Chunk.CHUNK_X; x++) {
-            for (int y = 0; y < Chunk.CHUNK_Y; y++) {
+            for (int y = Chunk.MIN_CHUNK_Y; y < Chunk.CHUNK_Y; y++) {
                 for (int z = 0; z < Chunk.CHUNK_Z; z++) {
                     Block block = chunk.getBlock(x, y, z);
                     if (!block.isBlock()) continue;
@@ -758,7 +758,7 @@ public class Render {
                 cx = (wx % BaseChunk.CHUNK_X + BaseChunk.CHUNK_X) % BaseChunk.CHUNK_X;
                 cz = (wz % BaseChunk.CHUNK_Z + BaseChunk.CHUNK_Z) % BaseChunk.CHUNK_Z;
             }
-            if (cy < 0 || cy >= BaseChunk.CHUNK_Y) continue;
+            if (cy < BaseChunk.MIN_CHUNK_Y || cy >= BaseChunk.CHUNK_Y) continue;
             sum += refChunk.getLightLevel(cx, cy, cz) / 15.0f;
             count++;
         }
@@ -788,7 +788,7 @@ public class Render {
             float x1 = x0 + BaseChunk.CHUNK_X;
             float z1 = z0 + BaseChunk.CHUNK_Z;
             float y0 = 0f;
-            float y1 = 256f;
+            float y1 = Chunk.CHUNK_Y;
             // Bordures du chunk
             float[][] chunkPts = {
                 {x0, y0, z0}, {x1, y0, z0}, {x1, y0, z1}, {x0, y0, z1},

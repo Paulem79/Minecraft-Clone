@@ -5,9 +5,10 @@ import ovh.paulem.mc.world.block.types.Block;
 
 @Getter
 public abstract class BaseChunk {
-    public static final int CHUNK_X = 16;
-    public static final int CHUNK_Y = 256;
-    public static final int CHUNK_Z = 16;
+    public static final byte CHUNK_X = 32;
+    public static final byte MIN_CHUNK_Y = 0;
+    public static final short CHUNK_Y = 256;
+    public static final byte CHUNK_Z = 32;
 
     protected final World world;
     protected final int originX;

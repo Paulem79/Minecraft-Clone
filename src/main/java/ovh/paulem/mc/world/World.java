@@ -78,13 +78,13 @@ public class World {
     }
 
     public boolean isOccluding(int x, int y, int z) {
-        if (y < 0 || y >= Chunk.CHUNK_Y) return false;
+        if (y < Chunk.MIN_CHUNK_Y || y >= Chunk.CHUNK_Y) return false;
         int cx = Math.floorDiv(x, Chunk.CHUNK_X);
         int cz = Math.floorDiv(z, Chunk.CHUNK_Z);
         int lx = Math.floorMod(x, Chunk.CHUNK_X);
         int lz = Math.floorMod(z, Chunk.CHUNK_Z);
         Future<BaseChunk> f = chunkFutures.get(key(cx, cz));
-        if (f == null) return false;
+        if (f == null || !f.isDone()) return false;
         try {
             BaseChunk c = f.get();
             if (c == null) return false;
@@ -97,13 +97,13 @@ public class World {
     }
 
     public boolean isPassable(int x, int y, int z) {
-        if (y < 0 || y >= Chunk.CHUNK_Y) return false;
+        if (y < Chunk.MIN_CHUNK_Y || y >= Chunk.CHUNK_Y) return false;
         int cx = Math.floorDiv(x, Chunk.CHUNK_X);
         int cz = Math.floorDiv(z, Chunk.CHUNK_Z);
         int lx = Math.floorMod(x, Chunk.CHUNK_X);
         int lz = Math.floorMod(z, Chunk.CHUNK_Z);
         Future<BaseChunk> f = chunkFutures.get(key(cx, cz));
-        if (f == null) return false;
+        if (f == null || !f.isDone()) return false;
         try {
             BaseChunk c = f.get();
             if (c == null) return false;
@@ -233,7 +233,7 @@ public class World {
     }
 
     public Block getBlock(int x, int y, int z) {
-        if (y < 0 || y >= Chunk.CHUNK_Y) return null;
+        if (y < Chunk.MIN_CHUNK_Y || y >= Chunk.CHUNK_Y) return null;
         int cx = Math.floorDiv(x, Chunk.CHUNK_X);
         int cz = Math.floorDiv(z, Chunk.CHUNK_Z);
         long k = key(cx, cz);
@@ -361,13 +361,17 @@ public class World {
     }
 
     public void setBlock(int x, int y, int z, Block block) {
-        if (y < 0 || y >= Chunk.CHUNK_Y) return; // Vérification des limites en Y
+        if (y < Chunk.MIN_CHUNK_Y || y >= Chunk.CHUNK_Y) return; // Vérification des limites en Y
         // Obtenir le chunk contenant le bloc
         BaseChunk chunk = getChunkAt(x, z);
         if (chunk != null) {
             // Convertir les coordonnées globales en coordonnées locales du chunk
             int localX = Math.floorMod(x, Chunk.CHUNK_X);
             int localZ = Math.floorMod(z, Chunk.CHUNK_Z);
+            // Lire l'id du bloc avant modification
+            byte oldId = chunk.getBlockId(localX, y, localZ);
+            byte newId = (byte) block.getId();
+            if (oldId == newId) return; // Ne rien faire si le bloc ne change pas
             // Modifier le bloc
             chunk.setBlock(localX, y, localZ, block);
             // --- Mise à jour dynamique de la lumière ---

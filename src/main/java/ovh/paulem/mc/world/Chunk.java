@@ -13,6 +13,9 @@ public class Chunk extends BaseChunk {
 
     @Override
     public byte getBlockId(int x, int y, int z) {
+        if (x < 0 || x >= CHUNK_X || y < MIN_CHUNK_Y || y >= CHUNK_Y || z < 0 || z >= CHUNK_Z) {
+            return 0; // Air par défaut hors limites
+        }
         return blocks[getIndex(x, y, z)];
     }
 
