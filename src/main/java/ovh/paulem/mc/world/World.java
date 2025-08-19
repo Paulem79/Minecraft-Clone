@@ -71,10 +71,8 @@ public class World {
     private BaseChunk createChunk(int cx, int cz) {
         int originX = cx * Chunk.CHUNK_X;
         int originZ = cz * Chunk.CHUNK_Z;
-        // Par défaut, on crée un Chunk classique. Remplacer par GreedyChunk si besoin.
+        // Par défaut, on crée un Chunk classique de proximité.
         return new Chunk(this, originX, originZ);
-        // Pour utiliser GreedyChunk :
-        // return new GreedyChunk(this, originX, originZ);
     }
 
     public boolean isOccluding(int x, int y, int z) {
@@ -267,11 +265,14 @@ public class World {
     }
 
     private void ensureChunksAround(int centerCx, int centerCz, int radius) {
+        int nearSq = Values.LOD_NEAR_RADIUS * Values.LOD_NEAR_RADIUS;
         for (int dz = -radius; dz <= radius; dz++) {
             for (int dx = -radius; dx <= radius; dx++) {
                 int cx = centerCx + dx;
                 int cz = centerCz + dz;
                 long k = key(cx, cz);
+                int dsq = dx * dx + dz * dz;
+                boolean near = dsq <= nearSq;
 
                 chunkFutures.computeIfAbsent(k, key -> chunkExecutor.submit(() -> {
                     // Tente de charger depuis le disque
@@ -279,8 +280,10 @@ public class World {
                     if (loadedChunk != null) {
                         return loadedChunk;
                     } else {
-                        // Génère le chunk si absent
-                        BaseChunk chunk = createChunk(cx, cz);
+                        // Crée un type de chunk en fonction de la distance (près = Chunk, loin = GreedyChunk compressé)
+                        int originX = cx * Chunk.CHUNK_X;
+                        int originZ = cz * Chunk.CHUNK_Z;
+                        BaseChunk chunk = near ? new Chunk(this, originX, originZ) : new GreedyChunk(this, originX, originZ);
                         if (chunk.getVersion() == 0) {
                             // Génération synchrone ici (sinon il faudrait chaîner les futures)
                             generateChunk(chunk, cx, cz);

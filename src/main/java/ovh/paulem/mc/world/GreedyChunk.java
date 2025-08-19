@@ -1,50 +1,59 @@
 package ovh.paulem.mc.world;
 
+import ovh.paulem.mc.Values;
 import ovh.paulem.mc.world.block.types.Block;
 import ovh.paulem.mc.world.block.Blocks;
 import java.util.Arrays;
 
+/**
+ * GreedyChunk sert désormais de Chunk LoD pour les chunks lointains.
+ * Il stocke une grille de macro-voxels plus grossière afin de réduire l'utilisation mémoire,
+ * et renvoie, pour toute requête (x,y,z), l'ID du bloc de la cellule LoD correspondante.
+ */
 public class GreedyChunk extends BaseChunk {
-    // Données compressées (RLE)
+    // Facteurs de LOD (récupérés depuis Values pour cohérence globale)
+    private static final int LOD_XZ = Math.max(1, Values.LOD_FACTOR_XZ);
+    private static final int LOD_Y  = Math.max(1, Values.LOD_FACTOR_Y);
+
+    // Dimensions de la grille LoD
+    private static final int SX = CHUNK_X / LOD_XZ;
+    private static final int SY = CHUNK_Y / LOD_Y;
+    private static final int SZ = CHUNK_Z / LOD_XZ;
+
+    // Données LoD: 1 octet par macro-voxel (block id déjà palettisé sur un byte)
+    private byte[] cells; // taille SX*SY*SZ
+
+    // RLE pour la sérialisation (paresseux)
     private byte[] rleBlocks;
-    private byte[] rleLightLevels;
-    // Tableaux décompressés (cache temporaire)
-    private byte[] blocksCache;
-    private byte[] lightLevelsCache;
-    private boolean cacheValid = false;
 
-    public GreedyChunk(World world, int originX, int originZ, byte[] rleBlocks, byte[] rleLightLevels) {
+    public GreedyChunk(World world, int originX, int originZ, byte[] rleBlocks, byte[] ignoredLight) {
         super(world, originX, originZ);
-        this.rleBlocks = rleBlocks;
-        this.rleLightLevels = rleLightLevels;
-        this.cacheValid = false;
+        // Décoder directement dans la grille LoD
+        this.cells = decodeRLE(rleBlocks, SX * SY * SZ);
+        this.rleBlocks = rleBlocks; // garder tel quel pour sauvegarde ultérieure
     }
 
-    // Constructeur pour chunk vide
+    // Constructeur pour chunk vide (toutes cellules à air)
     public GreedyChunk(World world, int originX, int originZ) {
-        this(world, originX, originZ, encodeRLE(new byte[CHUNK_X * CHUNK_Y * CHUNK_Z]), encodeRLE(new byte[(CHUNK_X * CHUNK_Y * CHUNK_Z + 1) / 2]));
+        super(world, originX, originZ);
+        this.cells = new byte[SX * SY * SZ]; // 0 = air
+        this.rleBlocks = null; // sera créé à la demande
     }
 
-    private void ensureCache() {
-        if (!cacheValid) {
-            blocksCache = decodeRLE(rleBlocks, CHUNK_X * CHUNK_Y * CHUNK_Z);
-            lightLevelsCache = decodeRLE(rleLightLevels, (CHUNK_X * CHUNK_Y * CHUNK_Z + 1) / 2);
-            cacheValid = true;
-        }
+    private int idxLOD(int cx, int cy, int cz) {
+        return cx + SX * (cz + SZ * cy);
     }
 
-    private void flushCache() {
-        if (cacheValid) {
-            rleBlocks = encodeRLE(blocksCache);
-            rleLightLevels = encodeRLE(lightLevelsCache);
-            cacheValid = false;
-        }
-    }
+    private int clamp(int v, int max) { return (v < 0) ? 0 : (v >= max ? max - 1 : v); }
+
+    private int toCx(int x) { return clamp(x / LOD_XZ, SX); }
+    private int toCy(int y) { return clamp(y / LOD_Y,  SY); }
+    private int toCz(int z) { return clamp(z / LOD_XZ, SZ); }
 
     @Override
     public byte getBlockId(int x, int y, int z) {
-        ensureCache();
-        return blocksCache[getIndex(x, y, z)];
+        int cx = toCx(x), cy = toCy(y), cz = toCz(z);
+        return cells[idxLOD(cx, cy, cz)];
     }
 
     @Override
@@ -54,50 +63,35 @@ public class GreedyChunk extends BaseChunk {
 
     @Override
     public void setBlockId(int x, int y, int z, byte id) {
-        ensureCache();
-        int idx = getIndex(x, y, z);
-        if (blocksCache[idx] != id) {
-            blocksCache[idx] = id;
-            bumpVersion();
-            flushCache();
+        int cx = toCx(x), cy = toCy(y), cz = toCz(z);
+        int idx = idxLOD(cx, cy, cz);
+        // Règle simple LoD: on privilégie les blocs non-air. Les écritures d'air ne suppriment pas la cellule.
+        // Comme la génération remonte en Y, la dernière écriture non-air reflètera la « couche supérieure » du macro-voxel.
+        if (id != 0) {
+            cells[idx] = id;
+            rleBlocks = null; // invalider cache RLE
         }
     }
 
     @Override
     public void setBlock(int x, int y, int z, Block block) {
-        setBlockId(x, y, z, (byte)block.getId());
+        setBlockId(x, y, z, (byte) block.getId());
     }
 
+    // Pour les chunks LoD lointains, on n'utilise pas la lumière par-voxel dans le rendu greedy.
     @Override
     public byte getLightLevel(int x, int y, int z) {
-        ensureCache();
-        int index = getIndex(x, y, z);
-        int byteIndex = index / 2;
-        boolean highNibble = (index % 2) == 0;
-        byte b = lightLevelsCache[byteIndex];
-        return (byte) (highNibble ? (b >> 4) & 0xF : b & 0xF);
+        return Values.MAX_LIGHT; // plein jour pour simplifier
     }
 
     @Override
     public void setLightLevel(int x, int y, int z, byte level) {
-        ensureCache();
-        int index = getIndex(x, y, z);
-        int byteIndex = index / 2;
-        boolean highNibble = (index % 2) == 0;
-        byte b = lightLevelsCache[byteIndex];
-        if (highNibble) {
-            b = (byte) ((b & 0x0F) | ((level & 0xF) << 4));
-        } else {
-            b = (byte) ((b & 0xF0) | (level & 0xF));
-        }
-        lightLevelsCache[byteIndex] = b;
-        bumpVersion();
-        flushCache();
+        // Ignoré pour LoD
     }
 
     @Override
     public void bakeLight() {
-        //world.getLightEngine().propagateSkyLight(this);
+        // Ignoré pour LoD (le rendu greedy lointain utilise un niveau de lumière constant)
     }
 
     // --- Méthodes RLE ---
@@ -126,17 +120,22 @@ public class GreedyChunk extends BaseChunk {
     public static byte[] decodeRLE(byte[] rle, int outLen) {
         byte[] out = new byte[outLen];
         int i = 0, pos = 0;
-        while (pos < outLen) {
+        while (pos < outLen && i < rle.length) {
             byte value = rle[i++];
             if (value == Byte.MIN_VALUE) break;
+            if (i + 1 >= rle.length) break;
             int runLength = ((rle[i++] & 0xFF) << 8) | (rle[i++] & 0xFF);
-            Arrays.fill(out, pos, pos + runLength, value);
-            pos += runLength;
+            int end = Math.min(pos + runLength, outLen);
+            Arrays.fill(out, pos, end, value);
+            pos = end;
         }
         return out;
     }
 
     // Accès direct aux données RLE pour la sérialisation
-    public byte[] getRleBlocks() { return rleBlocks; }
-    public byte[] getRleLightLevels() { return rleLightLevels; }
+    public byte[] getRleBlocks() {
+        if (rleBlocks == null) rleBlocks = encodeRLE(cells);
+        return rleBlocks;
+    }
+    public byte[] getRleLightLevels() { return new byte[0]; }
 }
