@@ -203,7 +203,8 @@ public class TextureAtlas {
                 for (int x = 0; x < textureSize; x++) {
                     int srcOffset = (y * textureSize + x) * 4;
                     int dstOffset = ((atlasY + y) * width + (atlasX + x)) * 4;
-                    
+
+                    if(srcOffset < 0 || srcOffset >= texData.limit()) continue;
                     atlasBuffer.put(dstOffset, texData.get(srcOffset));         // R
                     atlasBuffer.put(dstOffset + 1, texData.get(srcOffset + 1)); // G
                     atlasBuffer.put(dstOffset + 2, texData.get(srcOffset + 2)); // B
