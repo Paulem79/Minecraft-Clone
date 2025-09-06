@@ -7,6 +7,7 @@ import ovh.paulem.mc.engine.Camera;
 import ovh.paulem.mc.engine.Hotbar;
 import ovh.paulem.mc.engine.Window;
 import ovh.paulem.mc.engine.render.texture.*;
+import ovh.paulem.mc.engine.render.culling.Frustum;
 import ovh.paulem.mc.math.FastRandom;
 import ovh.paulem.mc.world.BaseChunk;
 import ovh.paulem.mc.world.Biome;
@@ -68,6 +69,12 @@ public class Render {
     private int particleVao = 0;
     private int particleVbo = 0;
 
+    // Texture Atlas for batching
+    private TextureAtlas textureAtlas = new TextureAtlas();
+    
+    // Frustum culling
+    private Frustum frustum = new Frustum();
+
     public void init() {
         // Active OpenGL
         GL.createCapabilities();
@@ -105,6 +112,9 @@ public class Render {
 
         Blocks.blocks.forEach((integer, block) -> block.serveTextures(Textures.textureCache));
 
+        // Build texture atlas after loading individual textures
+        textureAtlas.buildAtlas();
+
         // Caméra
         camera = new Camera();
         particleSystem = new ParticleSystem();
@@ -132,6 +142,10 @@ public class Render {
         shader.setUniformMat4("view", view);
         shader.setUniform("textureSampler", 0);
         shader.setUniform("overlaySampler", 1);
+
+        // Extract frustum planes for culling
+        Matrix4f projectionView = new Matrix4f(projection).mul(view);
+        frustum.extractPlanes(projectionView);
 
         if (world != null) {
             // Rebuild up to a small number of chunk meshes per frame to avoid spikes
@@ -179,9 +193,15 @@ public class Render {
             float camX = camera.getPosition().x;
             float camZ = camera.getPosition().z;
             for (BaseChunk c : chunks) {
+                // Frustum culling - skip chunks outside the view frustum
+                if (frustum.shouldCullChunk(c.getOriginX(), c.getOriginZ(), 
+                                          BaseChunk.CHUNK_X, BaseChunk.CHUNK_Y, BaseChunk.CHUNK_Z)) {
+                    continue; // Skip this chunk
+                }
+                
                 // Decide whether to use greedy meshing based on horizontal distance to chunk center
-                float chunkCenterX = c.getOriginX() + Chunk.CHUNK_X * 0.5f;
-                float chunkCenterZ = c.getOriginZ() + Chunk.CHUNK_Z * 0.5f;
+                float chunkCenterX = c.getOriginX() + BaseChunk.CHUNK_X * 0.5f;
+                float chunkCenterZ = c.getOriginZ() + BaseChunk.CHUNK_Z * 0.5f;
                 float dx = camX - chunkCenterX;
                 float dz = camZ - chunkCenterZ;
                 float dist = (float) Math.sqrt(dx * dx + dz * dz);
@@ -202,10 +222,14 @@ public class Render {
                 }
                 Matrix4f model = new Matrix4f().translation(c.getOriginX(), 0, c.getOriginZ());
                 shader.setUniformMat4("model", model);
+                
+                // Bind texture atlas once for all batches in this chunk
+                textureAtlas.bind(0);
+                
                 for (MeshBatch batch : cm.list) {
                     int mode = getMode(batch);
                     shader.setUniform("mode", mode);
-                    if (batch.texture != null) batch.texture.bind(0);
+                    // No need to bind individual textures - atlas is already bound
                     if (batch.mesh != null) batch.mesh.render();
                 }
                 // reset mode
@@ -588,6 +612,7 @@ public class Render {
     // Arrêt du thread pool à la fermeture
     public void shutdown() {
         meshExecutor.shutdown();
+        textureAtlas.cleanup();
     }
 
     public static class Acc {
@@ -692,6 +717,11 @@ public class Render {
     // Ajoute un quad à la liste des vertex et indices, AVEC couleur biome
     private static void addQuad(List<Float> verts, List<Integer> inds, float[] c0, float[] c1, float[] c2, float[] c3, Vector3f normal, int indexOffset, float[] lightLevels, float[] biomeColor) {
         float[][] uvs = new float[][]{{0,0},{1,0},{1,1},{0,1}};
+        addQuadWithUVs(verts, inds, c0, c1, c2, c3, normal, indexOffset, lightLevels, biomeColor, uvs);
+    }
+
+    // Ajoute un quad avec des coordonnées UV personnalisées (pour atlas)
+    private static void addQuadWithUVs(List<Float> verts, List<Integer> inds, float[] c0, float[] c1, float[] c2, float[] c3, Vector3f normal, int indexOffset, float[] lightLevels, float[] biomeColor, float[][] uvs) {
         float[][] corners = new float[][]{c0, c1, c2, c3};
         for (int i = 0; i < 4; i++) {
             float[] c = corners[i];

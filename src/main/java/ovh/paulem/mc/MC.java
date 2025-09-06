@@ -4,9 +4,11 @@ import lombok.Getter;
 import ovh.paulem.mc.engine.Camera;
 import ovh.paulem.mc.engine.Hotbar;
 import ovh.paulem.mc.engine.Player;
+import ovh.paulem.mc.engine.Raycaster;
 import ovh.paulem.mc.engine.Window;
 import ovh.paulem.mc.engine.render.Render;
 import ovh.paulem.mc.math.ArraysUtils;
+import ovh.paulem.mc.world.RaycastResult;
 import ovh.paulem.mc.world.World;
 import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFWErrorCallback;
@@ -74,7 +76,7 @@ public class MC {
     private final Vector3f tmpWorldWish = new Vector3f();
 
     // Raycast objets réutilisés
-    private final RaycastResult sharedRayResult = new RaycastResult();
+    private final Raycaster raycaster = new Raycaster();
     private final Vector3f raycastTmpDir = new Vector3f();
     private final Vector3f raycastCamPos = new Vector3f();
 
@@ -225,8 +227,7 @@ public class MC {
 
     public static void main(String[] args) throws Exception { new MC().run(); }
 
-    // Résultat raycast réutilisable
-    private static class RaycastResult { public boolean hit; public int x, y, z; public int face; public void reset(){hit=false;face=-1;} }
+    // Résultat raycast réutilisable - now handled by Raycaster class
 
     private RaycastResult raycast() {
         Camera camera = render.getCamera();
@@ -234,32 +235,10 @@ public class MC {
         double yaw = Math.toRadians(camera.getRotation().y);
         double pitch = Math.toRadians(camera.getRotation().x);
         raycastTmpDir.set((float)(Math.sin(yaw) * Math.cos(pitch)), (float)(-Math.sin(pitch)), (float)(-Math.cos(yaw) * Math.cos(pitch))).normalize();
-        return raycastBlock(raycastCamPos, raycastTmpDir, RAY_MAX_DISTANCE);
+        return raycaster.raycast(world, raycastCamPos, raycastTmpDir, RAY_MAX_DISTANCE);
     }
 
-    private RaycastResult raycastBlock(Vector3f start, Vector3f dir, float maxDistance) {
-        RaycastResult result = sharedRayResult; result.reset();
-        int x = (int) Math.floor(start.x);
-        int y = (int) Math.floor(start.y);
-        int z = (int) Math.floor(start.z);
-        float stepX = dir.x > 0 ? 1 : -1;
-        float stepY = dir.y > 0 ? 1 : -1;
-        float stepZ = dir.z > 0 ? 1 : -1;
-        float tMaxX = dir.x != 0 ? Math.abs((x + (stepX > 0 ? 1 : 0) - start.x) / dir.x) : Float.MAX_VALUE;
-        float tMaxY = dir.y != 0 ? Math.abs((y + (stepY > 0 ? 1 : 0) - start.y) / dir.y) : Float.MAX_VALUE;
-        float tMaxZ = dir.z != 0 ? Math.abs((z + (stepZ > 0 ? 1 : 0) - start.z) / dir.z) : Float.MAX_VALUE;
-        float tDeltaX = dir.x != 0 ? Math.abs(1 / dir.x) : Float.MAX_VALUE;
-        float tDeltaY = dir.y != 0 ? Math.abs(1 / dir.y) : Float.MAX_VALUE;
-        float tDeltaZ = dir.z != 0 ? Math.abs(1 / dir.z) : Float.MAX_VALUE;
-        int face = -1; float distance = 0;
-        while (distance < maxDistance) {
-            if (!world.isPassable(x, y, z)) { result.hit = true; result.x = x; result.y = y; result.z = z; result.face = face; return result; }
-            if (tMaxX < tMaxY && tMaxX < tMaxZ) { distance = tMaxX; tMaxX += tDeltaX; x += (int) stepX; face = stepX > 0 ? 1 : 0; }
-            else if (tMaxY < tMaxZ) { distance = tMaxY; tMaxY += tDeltaY; y += (int) stepY; face = stepY > 0 ? 3 : 2; }
-            else { distance = tMaxZ; tMaxZ += tDeltaZ; z += (int) stepZ; face = stepZ > 0 ? 5 : 4; }
-        }
-        return result;
-    }
+    // The old raycastBlock method is now replaced by the Raycaster class
 
     private void handleBlockBreak(Player player) {
         long currentTime = System.currentTimeMillis();

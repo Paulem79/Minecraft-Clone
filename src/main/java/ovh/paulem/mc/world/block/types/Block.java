@@ -2,6 +2,7 @@ package ovh.paulem.mc.world.block.types;
 
 import lombok.Getter;
 import ovh.paulem.mc.engine.render.texture.Texture;
+import ovh.paulem.mc.engine.render.texture.TextureAtlas;
 import ovh.paulem.mc.engine.render.texture.Textures;
 import ovh.paulem.mc.world.block.Face;
 
@@ -47,6 +48,17 @@ public abstract class Block {
     }
 
     public abstract void serveTextures(Map<String, Texture> textureCache);
+
+    /**
+     * Get the UV region for this block's face from the texture atlas.
+     * @param face The face index (0-5)
+     * @param atlas The texture atlas
+     * @return UV region or null if not found
+     */
+    public TextureAtlas.UVRegion getRegion(int face, TextureAtlas atlas) {
+        String textureName = getFaceTextureName(face);
+        return atlas.getRegion(textureName);
+    }
 
     public String[] getSounds() {
         return new String[]{"Grass_dig1", "Grass_dig2", "Grass_dig3", "Grass_dig4"};
