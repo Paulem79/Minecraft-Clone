@@ -151,7 +151,25 @@ public class TextureAtlas {
             if (isBase) {
                 throw new RuntimeException("No base textures loaded for atlas");
             } else {
-                // No overlay textures is OK, just skip overlay atlas creation
+                // Create empty overlay atlas with same dimensions as base atlas
+                // This ensures unit 1 has a valid texture bound
+                overlayTextureId = glGenTextures();
+                glBindTexture(GL_TEXTURE_2D, overlayTextureId);
+                
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                
+                // Create a 1x1 transparent texture as placeholder
+                ByteBuffer emptyBuffer = MemoryUtil.memAlloc(4);
+                emptyBuffer.put((byte)0).put((byte)0).put((byte)0).put((byte)0);
+                emptyBuffer.flip();
+                
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, emptyBuffer);
+                glBindTexture(GL_TEXTURE_2D, 0);
+                
+                MemoryUtil.memFree(emptyBuffer);
                 return;
             }
         }
