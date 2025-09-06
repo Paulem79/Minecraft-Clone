@@ -6,7 +6,9 @@ import ovh.paulem.mc.engine.Hotbar;
 import ovh.paulem.mc.engine.Player;
 import ovh.paulem.mc.engine.Raycaster;
 import ovh.paulem.mc.engine.Window;
-import ovh.paulem.mc.engine.render.Render;
+import ovh.paulem.mc.engine.render.IRenderer;
+import ovh.paulem.mc.engine.render.RendererFactory;
+import ovh.paulem.mc.config.Config;
 import ovh.paulem.mc.math.ArraysUtils;
 import ovh.paulem.mc.world.RaycastResult;
 import ovh.paulem.mc.world.World;
@@ -27,7 +29,7 @@ public class MC {
     public MC() { INSTANCE = this; }
 
     @Getter private long window;
-    @Getter private Render render;
+    @Getter private IRenderer render;
     @Getter private Window windowWrapper;
     @Getter private World world;
     @Getter private Player player;
@@ -50,6 +52,9 @@ public class MC {
     private boolean firstMouse = true;
     private double pendingYawDelta = 0.0;
     private double pendingPitchDelta = 0.0;
+    
+    // Renderer toggle tracking
+    private boolean f6KeyPressed = false;
 
     private long lastTimeNanos;
 
@@ -116,7 +121,7 @@ public class MC {
         // Hotbar & rendu
         hotbar = new Hotbar();
         windowWrapper = new Window(width, height, window);
-        render = new Render();
+        render = RendererFactory.getCurrentRenderer();
         render.init();
         render.setHotbar(hotbar);
 
@@ -128,6 +133,9 @@ public class MC {
 
         soundPlayer = new SoundPlayer();
         lastTimeNanos = System.nanoTime();
+        
+        // Enable performance logging to see renderer comparison
+        Config.setPerformanceLogging(true);
     }
 
     private void loop() {
@@ -189,6 +197,30 @@ public class MC {
                 pendingYawDelta = 0; pendingPitchDelta = 0;
             }
 
+            // F6 key toggle for renderer switching
+            boolean currentF6 = glfwGetKey(window, GLFW_KEY_F6) == GLFW_PRESS;
+            if (currentF6 && !f6KeyPressed) {
+                f6KeyPressed = true;
+                boolean newMode = Config.toggleRenderer();
+                System.out.println("Switched to " + (newMode ? "Voxel Ray" : "Mesh") + " Renderer");
+                
+                // Get new renderer and transfer state
+                IRenderer oldRenderer = render;
+                render = RendererFactory.getCurrentRenderer();
+                
+                // Transfer world and hotbar to new renderer
+                if (render != oldRenderer) {
+                    render.setWorld(world);
+                    render.setHotbar(hotbar);
+                    
+                    if (Config.isPerformanceLogging()) {
+                        System.out.println("Renderer switched successfully to: " + render.getName());
+                    }
+                }
+            } else if (!currentF6 && f6KeyPressed) {
+                f6KeyPressed = false;
+            }
+
             // Clics souris (block actions)
             boolean currentLeftMouse = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
             boolean currentRightMouse = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
@@ -220,7 +252,7 @@ public class MC {
 
     private void cleanup() {
         if (world != null) world.shutdown();
-        render.shutdown();
+        RendererFactory.shutdown();
         glfwDestroyWindow(window);
         glfwTerminate();
     }

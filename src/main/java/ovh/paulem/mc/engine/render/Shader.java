@@ -30,6 +30,32 @@ public class Shader {
         glDeleteShader(fragmentShaderId);
     }
 
+    // Constructor for direct source code
+    public Shader(String vertexSource, String fragmentSource, boolean isSourceCode) {
+        if (!isSourceCode) {
+            throw new IllegalArgumentException("Use the other constructor for file paths");
+        }
+        
+        // Compiler les shaders directement depuis le source
+        int vertexShaderId = compileShaderFromSource(vertexSource, GL_VERTEX_SHADER);
+        int fragmentShaderId = compileShaderFromSource(fragmentSource, GL_FRAGMENT_SHADER);
+
+        // Lier les shaders dans un programme
+        programId = glCreateProgram();
+        glAttachShader(programId, vertexShaderId);
+        glAttachShader(programId, fragmentShaderId);
+        glLinkProgram(programId);
+
+        // Vérifier erreurs de linkage
+        if (glGetProgrami(programId, GL_LINK_STATUS) == GL_FALSE) {
+            throw new RuntimeException("Erreur linkage shader: " + glGetProgramInfoLog(programId));
+        }
+
+        // Les shaders individuels peuvent être supprimés après linkage
+        glDeleteShader(vertexShaderId);
+        glDeleteShader(fragmentShaderId);
+    }
+
     private int compileShader(String filePath, int type) {
         String source;
         try {
@@ -50,12 +76,35 @@ public class Shader {
         return shaderId;
     }
 
+    private int compileShaderFromSource(String source, int type) {
+        int shaderId = glCreateShader(type);
+        glShaderSource(shaderId, source);
+        glCompileShader(shaderId);
+
+        // Vérifier erreurs de compilation
+        if (glGetShaderi(shaderId, GL_COMPILE_STATUS) == GL_FALSE) {
+            throw new RuntimeException("Erreur compilation shader: " + glGetShaderInfoLog(shaderId));
+        }
+
+        return shaderId;
+    }
+
     public void use() {
         glUseProgram(programId);
+    }
+    
+    // Alias for use() for consistency
+    public void bind() {
+        use();
     }
 
     public void delete() {
         glDeleteProgram(programId);
+    }
+    
+    // Alias for delete() for consistency
+    public void cleanup() {
+        delete();
     }
 
     // Envoi d'un float
