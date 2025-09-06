@@ -119,8 +119,24 @@ public class RenderOptions {
     }
     
     // TODO: Méthodes de sauvegarde/chargement des options
-    // public void saveToFile(String filename) { }
-    // public void loadFromFile(String filename) { }
+    // public void saveToFile(String filename) { 
+    //     // Sauvegarder les options dans un fichier JSON ou properties
+    //     // Format suggéré: renderDistance=8\nantialiasing=false\n...
+    // }
+    // public void loadFromFile(String filename) { 
+    //     // Charger les options depuis un fichier
+    //     // Appliquer les valeurs avec validation
+    // }
+    
+    // TODO: Validation plus stricte des paramètres
+    // public boolean isValidConfiguration() { return true; }
+    
+    // TODO: Événements de changement d'options
+    // public interface OptionsChangeListener {
+    //     void onRenderDistanceChanged(int oldValue, int newValue);
+    //     void onAntialiasingChanged(boolean enabled, int level);
+    // }
+    // private List<OptionsChangeListener> listeners = new ArrayList<>();
     
     @Override
     public String toString() {

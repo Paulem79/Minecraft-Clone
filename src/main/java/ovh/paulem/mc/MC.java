@@ -46,6 +46,7 @@ public class MC {
     private boolean f1Pressed = false;
     private boolean key1Pressed = false, key2Pressed = false, key3Pressed = false;
     private boolean key4Pressed = false, key5Pressed = false, key6Pressed = false, key7Pressed = false;
+    private boolean[] hotbarKeyPressed = new boolean[9]; // Pour les touches 1-9 de sélection hotbar
     private long lastBlockActionTime = 0;
     private static final long BLOCK_ACTION_COOLDOWN = 0; // ms
 
@@ -125,6 +126,16 @@ public class MC {
             lastMouseX = xpos; lastMouseY = ypos;
             pendingYawDelta += dx; // yaw = rotation.y
             pendingPitchDelta += dy; // pitch = rotation.x
+        });
+        
+        // Callback pour la molette de souris (sélection hotbar)
+        // TODO: Ajouter support pour zoom de caméra avec molette + modificateur
+        glfwSetScrollCallback(window, (w, xoffset, yoffset) -> {
+            if (yoffset > 0) {
+                hotbar.previousSlot(); // Molette vers le haut = slot précédent
+            } else if (yoffset < 0) {
+                hotbar.nextSlot(); // Molette vers le bas = slot suivant
+            }
         });
 
         // Hotbar & rendu
@@ -229,6 +240,10 @@ public class MC {
             // Options de rendu raccourcis clavier (uniquement si menu ouvert)
             if (optionsRenderer.isVisible()) {
                 handleOptionsInput();
+            } else {
+                // Sélection directe hotbar avec les touches numériques (quand menu fermé)
+                // TODO: Ajouter support pour plus de 9 slots si nécessaire
+                handleHotbarInput();
             }
             
             // Appliquer les options modifiées
@@ -373,7 +388,30 @@ public class MC {
     }
     
     /**
+     * Gère la sélection directe de la hotbar avec les touches numériques
+     * TODO: Étendre pour supporter plus de slots si nécessaire
+     */
+    private void handleHotbarInput() {
+        // Sélection directe avec touches 1-9
+        for (int i = 1; i <= 9; i++) {
+            int keyCode = GLFW_KEY_0 + i; // GLFW_KEY_1 à GLFW_KEY_9
+            if (glfwGetKey(window, keyCode) == GLFW_PRESS) {
+                if (!hotbarKeyPressed[i-1]) {
+                    hotbarKeyPressed[i-1] = true;
+                    // Sélectionner le slot (index 0-8)
+                    if (i-1 < hotbar.BLOCKS.size()) {
+                        hotbar.setSelectedSlot(i-1); // TODO: Ajouter cette méthode à Hotbar
+                    }
+                }
+            } else {
+                hotbarKeyPressed[i-1] = false;
+            }
+        }
+    }
+    
+    /**
      * Applique les options de rendu modifiées
+     * TODO: Ajouter gestion plus fine des changements d'options
      */
     private void applyRenderOptions() {
         // Appliquer V-Sync
@@ -390,6 +428,10 @@ public class MC {
         }
         
         // TODO: Appliquer dynamiquement le niveau d'antialiasing (nécessite recréation du contexte)
-        // TODO: Mettre à jour la distance de rendu pour le monde
+        // TODO: Mettre à jour la distance de rendu pour le monde en temps réel
+        // TODO: Ajouter support pour le changement de résolution
+        // TODO: Ajouter options de qualité d'ombres et de lumière
+        // TODO: Implémenter fog configurable basé sur la distance de rendu
+        // TODO: Ajouter options de post-processing (bloom, tone mapping, etc.)
     }
 }

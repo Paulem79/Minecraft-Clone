@@ -134,6 +134,9 @@ public class OptionsRenderer {
     /**
      * Dessine du texte simple avec des lignes représentant les caractères
      * TODO: Remplacer par un système de rendu de texte plus avancé avec STB_truetype
+     * TODO: Ajouter support pour différentes tailles de police
+     * TODO: Ajouter support pour les caractères Unicode/UTF-8
+     * TODO: Optimiser le rendu de texte avec des textures précalculées
      */
     private void drawText(String text, float x, float y, float r, float g, float b, float a) {
         glColor4f(r, g, b, a);

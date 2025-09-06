@@ -60,8 +60,13 @@ public class Render {
     private final ArrayDeque<BaseChunk> meshBuildQueue = new ArrayDeque<>();
 
     // Ajout d'un ExecutorService pour le meshing parallèle
+    // TODO: Configurer le nombre de threads basé sur les options de performance
+    // TODO: Ajouter priorité aux chunks proches du joueur
+    // TODO: Implémenter un système de cache de chunks sur disque pour réduire la génération
     private final ExecutorService meshExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
     // Map temporaire pour stocker les résultats de meshing asynchrone
+    // TODO: Ajouter timeout pour éviter l'accumulation de futures abandonnées
+    // TODO: Implémenter un système de priorité pour les chunks visibles
     private final Map<BaseChunk, Future<MeshBuildResult>> meshFutures = new ConcurrentHashMap<>();
 
     private ParticleSystem particleSystem = new ParticleSystem();
@@ -84,6 +89,8 @@ public class Render {
         
         // Configuration de l'antialiasing si disponible
         // TODO: Ajouter méthode pour activer/désactiver l'antialiasing dynamiquement
+        // TODO: Ajouter support pour d'autres techniques d'antialiasing (FXAA, TAA)
+        // TODO: Configurer les options de rendu OpenGL basées sur les capacités matérielles
         if (Values.renderOptions.isAntialiasingEnabled()) {
             glEnable(GL_MULTISAMPLE);
         }

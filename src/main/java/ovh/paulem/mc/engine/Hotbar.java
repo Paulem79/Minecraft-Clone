@@ -68,6 +68,16 @@ public class Hotbar {
     public int getSelectedSlotIndex() {
         return selectedSlot;
     }
+    
+    /**
+     * Définit directement l'emplacement sélectionné
+     * @param slot L'index de l'emplacement à sélectionner (0-8)
+     */
+    public void setSelectedSlot(int slot) {
+        if (slot >= 0 && slot < BLOCKS.size()) {
+            selectedSlot = slot;
+        }
+    }
 
     /**
      * Récupère le bloc à un index spécifique
