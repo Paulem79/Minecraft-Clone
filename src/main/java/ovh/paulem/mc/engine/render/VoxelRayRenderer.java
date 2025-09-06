@@ -244,15 +244,20 @@ public class VoxelRayRenderer implements IRenderer {
         float yaw = (float) Math.toRadians(rotation.y);
         float pitch = (float) Math.toRadians(rotation.x);
         
-        // Rotate by pitch around X axis, then yaw around Y axis
+        // Apply rotations: first pitch (around X), then yaw (around Y)
         float cosPitch = (float) Math.cos(pitch);
         float sinPitch = (float) Math.sin(pitch);
         float cosYaw = (float) Math.cos(yaw);
         float sinYaw = (float) Math.sin(yaw);
         
-        rayDirection.x = cameraX * cosYaw + cameraZ * sinYaw;
-        rayDirection.y = cameraY * cosPitch + cameraZ * sinPitch;
-        rayDirection.z = -cameraX * sinYaw + cameraZ * cosYaw;
+        // Rotate by pitch around X axis
+        float tempY = cameraY * cosPitch - cameraZ * sinPitch;
+        float tempZ = cameraY * sinPitch + cameraZ * cosPitch;
+        
+        // Then rotate by yaw around Y axis
+        rayDirection.x = cameraX * cosYaw - tempZ * sinYaw;
+        rayDirection.y = tempY;
+        rayDirection.z = cameraX * sinYaw + tempZ * cosYaw;
         
         rayDirection.normalize();
     }
@@ -365,13 +370,14 @@ public class VoxelRayRenderer implements IRenderer {
     public void setHotbar(Hotbar hotbar) {
         this.hotbar = hotbar;
         // Initialize hotbar renderer when hotbar is available
-        // Note: HotbarRenderer uses its own shader, so we create a basic one
         if (hotbar != null) {
-            // Create a simple 2D shader for UI rendering if we don't have one
-            if (hotbarRenderer == null) {
-                // For now, let's try to create HotbarRenderer with our ray shader
-                // This might need adjustment if the shaders are incompatible
+            try {
+                // Create hotbar renderer - it might work with our simple shader
                 hotbarRenderer = new HotbarRenderer(hotbar, rayShader);
+            } catch (Exception e) {
+                System.err.println("Warning: Could not initialize HotbarRenderer for VoxelRayRenderer: " + e.getMessage());
+                // UI rendering will be skipped but core ray tracing will still work
+                hotbarRenderer = null;
             }
         }
     }
