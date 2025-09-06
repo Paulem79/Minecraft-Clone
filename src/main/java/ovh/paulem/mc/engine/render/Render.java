@@ -142,6 +142,16 @@ public class Render {
         this.hotbar = hotbar;
         this.hotbarRenderer = new HotbarRenderer(hotbar, shader);
     }
+    
+    public void setRenderOptions(ovh.paulem.mc.engine.RenderOptions options) {
+        // Cette méthode permet de gérer les changements d'options de rendu
+        // Pour l'instant, les options sont accessibles via Values.renderOptions
+        // Mais cette méthode peut être étendue pour gérer des mises à jour spécifiques
+        if (options != null) {
+            // Invalider le cache de mesh si la distance LOD change
+            this.meshCache.clear();
+        }
+    }
 
     public void render(Window window, float frameDt) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

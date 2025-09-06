@@ -1,5 +1,13 @@
 package ovh.paulem.mc.engine;
 
+import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Properties;
+
 /**
  * Gère les options de rendu configurables du jeu
  */
@@ -23,6 +31,9 @@ public class RenderOptions {
     // Budget de performance par frame
     private int meshesPerFrameBudget = 2;
     
+    // Système d'événements
+    private final List<OptionsChangeListener> listeners = new ArrayList<>();
+    
     public RenderOptions() {
         // Valeurs par défaut
     }
@@ -40,30 +51,54 @@ public class RenderOptions {
     
     // Setters avec validation
     public void setRenderDistance(int distance) {
+        int oldValue = this.renderDistance;
         this.renderDistance = Math.max(2, Math.min(32, distance));
+        if (oldValue != this.renderDistance) {
+            notifyRenderDistanceChanged(oldValue, this.renderDistance);
+        }
     }
     
     public void setAntialiasing(boolean enabled) {
+        boolean oldValue = this.antialiasing;
         this.antialiasing = enabled;
+        if (oldValue != this.antialiasing) {
+            notifyAntialiasingChanged(this.antialiasing, this.antialiasingLevel);
+        }
     }
     
     public void setAntialiasingLevel(int level) {
+        int oldLevel = this.antialiasingLevel;
         // Niveaux valides: 2, 4, 8, 16
         if (level == 2 || level == 4 || level == 8 || level == 16) {
             this.antialiasingLevel = level;
+            if (oldLevel != this.antialiasingLevel) {
+                notifyAntialiasingChanged(this.antialiasing, this.antialiasingLevel);
+            }
         }
     }
     
     public void setLodDistance(float distance) {
+        float oldValue = this.lodDistance;
         this.lodDistance = Math.max(20.0f, Math.min(500.0f, distance));
+        if (Math.abs(oldValue - this.lodDistance) > 0.01f) {
+            notifyLodDistanceChanged(oldValue, this.lodDistance);
+        }
     }
     
     public void setLodEnabled(boolean enabled) {
+        boolean oldValue = this.enableLod;
         this.enableLod = enabled;
+        if (oldValue != this.enableLod) {
+            notifyLodEnabledChanged(this.enableLod);
+        }
     }
     
     public void setVsync(boolean enabled) {
+        boolean oldValue = this.vsync;
         this.vsync = enabled;
+        if (oldValue != this.vsync) {
+            notifyVsyncChanged(this.vsync);
+        }
     }
     
     public void setShowChunkBorders(boolean show) {
@@ -75,7 +110,11 @@ public class RenderOptions {
     }
     
     public void setMeshesPerFrameBudget(int budget) {
+        int oldValue = this.meshesPerFrameBudget;
         this.meshesPerFrameBudget = Math.max(1, Math.min(10, budget));
+        if (oldValue != this.meshesPerFrameBudget) {
+            notifyMeshBudgetChanged(oldValue, this.meshesPerFrameBudget);
+        }
     }
     
     // Méthodes pour changer les valeurs par incrément
@@ -118,25 +157,139 @@ public class RenderOptions {
         showChunkBorders = !showChunkBorders;
     }
     
-    // TODO: Méthodes de sauvegarde/chargement des options
-    // public void saveToFile(String filename) { 
-    //     // Sauvegarder les options dans un fichier JSON ou properties
-    //     // Format suggéré: renderDistance=8\nantialiasing=false\n...
-    // }
-    // public void loadFromFile(String filename) { 
-    //     // Charger les options depuis un fichier
-    //     // Appliquer les valeurs avec validation
-    // }
+    // Méthodes de sauvegarde/chargement des options
+    public void saveToFile(String filename) {
+        try {
+            Properties props = new Properties();
+            props.setProperty("renderDistance", String.valueOf(renderDistance));
+            props.setProperty("antialiasing", String.valueOf(antialiasing));
+            props.setProperty("antialiasingLevel", String.valueOf(antialiasingLevel));
+            props.setProperty("lodDistance", String.valueOf(lodDistance));
+            props.setProperty("enableLod", String.valueOf(enableLod));
+            props.setProperty("vsync", String.valueOf(vsync));
+            props.setProperty("showChunkBorders", String.valueOf(showChunkBorders));
+            props.setProperty("maxFps", String.valueOf(maxFps));
+            props.setProperty("meshesPerFrameBudget", String.valueOf(meshesPerFrameBudget));
+            
+            Path configPath = Paths.get(filename);
+            Files.createDirectories(configPath.getParent());
+            
+            try (FileOutputStream fos = new FileOutputStream(configPath.toFile())) {
+                props.store(fos, "Minecraft Clone Render Options");
+            }
+        } catch (IOException e) {
+            System.err.println("Erreur lors de la sauvegarde des options: " + e.getMessage());
+        }
+    }
     
-    // TODO: Validation plus stricte des paramètres
-    // public boolean isValidConfiguration() { return true; }
+    public void loadFromFile(String filename) {
+        try {
+            Path configPath = Paths.get(filename);
+            if (!Files.exists(configPath)) {
+                return; // Fichier n'existe pas, utiliser les valeurs par défaut
+            }
+            
+            Properties props = new Properties();
+            try (FileInputStream fis = new FileInputStream(configPath.toFile())) {
+                props.load(fis);
+            }
+            
+            // Charger avec validation
+            if (props.containsKey("renderDistance")) {
+                setRenderDistance(Integer.parseInt(props.getProperty("renderDistance")));
+            }
+            if (props.containsKey("antialiasing")) {
+                setAntialiasing(Boolean.parseBoolean(props.getProperty("antialiasing")));
+            }
+            if (props.containsKey("antialiasingLevel")) {
+                setAntialiasingLevel(Integer.parseInt(props.getProperty("antialiasingLevel")));
+            }
+            if (props.containsKey("lodDistance")) {
+                setLodDistance(Float.parseFloat(props.getProperty("lodDistance")));
+            }
+            if (props.containsKey("enableLod")) {
+                setLodEnabled(Boolean.parseBoolean(props.getProperty("enableLod")));
+            }
+            if (props.containsKey("vsync")) {
+                setVsync(Boolean.parseBoolean(props.getProperty("vsync")));
+            }
+            if (props.containsKey("showChunkBorders")) {
+                setShowChunkBorders(Boolean.parseBoolean(props.getProperty("showChunkBorders")));
+            }
+            if (props.containsKey("maxFps")) {
+                setMaxFps(Integer.parseInt(props.getProperty("maxFps")));
+            }
+            if (props.containsKey("meshesPerFrameBudget")) {
+                setMeshesPerFrameBudget(Integer.parseInt(props.getProperty("meshesPerFrameBudget")));
+            }
+            
+        } catch (IOException | NumberFormatException e) {
+            System.err.println("Erreur lors du chargement des options: " + e.getMessage());
+        }
+    }
     
-    // TODO: Événements de changement d'options
-    // public interface OptionsChangeListener {
-    //     void onRenderDistanceChanged(int oldValue, int newValue);
-    //     void onAntialiasingChanged(boolean enabled, int level);
-    // }
-    // private List<OptionsChangeListener> listeners = new ArrayList<>();
+    // Validation plus stricte des paramètres
+    public boolean isValidConfiguration() {
+        return renderDistance >= 2 && renderDistance <= 32 &&
+               (antialiasingLevel == 2 || antialiasingLevel == 4 || antialiasingLevel == 8 || antialiasingLevel == 16) &&
+               lodDistance >= 20.0f && lodDistance <= 500.0f &&
+               maxFps >= 0 && maxFps <= 300 &&
+               meshesPerFrameBudget >= 1 && meshesPerFrameBudget <= 10;
+    }
+    
+    // Système d'événements pour les changements d'options
+    public interface OptionsChangeListener {
+        default void onRenderDistanceChanged(int oldValue, int newValue) {}
+        default void onAntialiasingChanged(boolean enabled, int level) {}
+        default void onLodDistanceChanged(float oldValue, float newValue) {}
+        default void onLodEnabledChanged(boolean enabled) {}
+        default void onVsyncChanged(boolean enabled) {}
+        default void onMeshBudgetChanged(int oldValue, int newValue) {}
+    }
+    
+    public void addChangeListener(OptionsChangeListener listener) {
+        listeners.add(listener);
+    }
+    
+    public void removeChangeListener(OptionsChangeListener listener) {
+        listeners.remove(listener);
+    }
+    
+    private void notifyRenderDistanceChanged(int oldValue, int newValue) {
+        for (OptionsChangeListener listener : listeners) {
+            listener.onRenderDistanceChanged(oldValue, newValue);
+        }
+    }
+    
+    private void notifyAntialiasingChanged(boolean enabled, int level) {
+        for (OptionsChangeListener listener : listeners) {
+            listener.onAntialiasingChanged(enabled, level);
+        }
+    }
+    
+    private void notifyLodDistanceChanged(float oldValue, float newValue) {
+        for (OptionsChangeListener listener : listeners) {
+            listener.onLodDistanceChanged(oldValue, newValue);
+        }
+    }
+    
+    private void notifyLodEnabledChanged(boolean enabled) {
+        for (OptionsChangeListener listener : listeners) {
+            listener.onLodEnabledChanged(enabled);
+        }
+    }
+    
+    private void notifyVsyncChanged(boolean enabled) {
+        for (OptionsChangeListener listener : listeners) {
+            listener.onVsyncChanged(enabled);
+        }
+    }
+    
+    private void notifyMeshBudgetChanged(int oldValue, int newValue) {
+        for (OptionsChangeListener listener : listeners) {
+            listener.onMeshBudgetChanged(oldValue, newValue);
+        }
+    }
     
     @Override
     public String toString() {
