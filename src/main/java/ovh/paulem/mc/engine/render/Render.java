@@ -7,6 +7,7 @@ import ovh.paulem.mc.engine.Camera;
 import ovh.paulem.mc.engine.Hotbar;
 import ovh.paulem.mc.engine.Window;
 import ovh.paulem.mc.engine.render.texture.*;
+import ovh.paulem.mc.engine.render.culling.Frustum;
 import ovh.paulem.mc.math.FastRandom;
 import ovh.paulem.mc.world.BaseChunk;
 import ovh.paulem.mc.world.Biome;
@@ -68,6 +69,12 @@ public class Render {
     private int particleVao = 0;
     private int particleVbo = 0;
 
+    // Texture Atlas for batching
+    private TextureAtlas textureAtlas = new TextureAtlas();
+    
+    // Frustum culling
+    private Frustum frustum = new Frustum();
+
     public void init() {
         // Active OpenGL
         GL.createCapabilities();
@@ -105,6 +112,9 @@ public class Render {
 
         Blocks.blocks.forEach((integer, block) -> block.serveTextures(Textures.textureCache));
 
+        // Build texture atlas after loading individual textures
+        textureAtlas.buildAtlas();
+
         // Caméra
         camera = new Camera();
         particleSystem = new ParticleSystem();
@@ -132,6 +142,10 @@ public class Render {
         shader.setUniformMat4("view", view);
         shader.setUniform("textureSampler", 0);
         shader.setUniform("overlaySampler", 1);
+
+        // Extract frustum planes for culling
+        Matrix4f projectionView = new Matrix4f(projection).mul(view);
+        frustum.extractPlanes(projectionView);
 
         if (world != null) {
             // Rebuild up to a small number of chunk meshes per frame to avoid spikes
@@ -179,9 +193,15 @@ public class Render {
             float camX = camera.getPosition().x;
             float camZ = camera.getPosition().z;
             for (BaseChunk c : chunks) {
+                // Frustum culling - skip chunks outside the view frustum
+                if (frustum.shouldCullChunk(c.getOriginX(), c.getOriginZ(), 
+                                          BaseChunk.CHUNK_X, BaseChunk.CHUNK_Y, BaseChunk.CHUNK_Z)) {
+                    continue; // Skip this chunk
+                }
+                
                 // Decide whether to use greedy meshing based on horizontal distance to chunk center
-                float chunkCenterX = c.getOriginX() + Chunk.CHUNK_X * 0.5f;
-                float chunkCenterZ = c.getOriginZ() + Chunk.CHUNK_Z * 0.5f;
+                float chunkCenterX = c.getOriginX() + BaseChunk.CHUNK_X * 0.5f;
+                float chunkCenterZ = c.getOriginZ() + BaseChunk.CHUNK_Z * 0.5f;
                 float dx = camX - chunkCenterX;
                 float dz = camZ - chunkCenterZ;
                 float dist = (float) Math.sqrt(dx * dx + dz * dz);
@@ -202,10 +222,15 @@ public class Render {
                 }
                 Matrix4f model = new Matrix4f().translation(c.getOriginX(), 0, c.getOriginZ());
                 shader.setUniformMat4("model", model);
+                
+                // Bind texture atlases for all batches in this chunk
+                textureAtlas.bind(0);           // Base textures to unit 0
+                textureAtlas.bindOverlay(1);    // Overlay textures to unit 1
+                
                 for (MeshBatch batch : cm.list) {
                     int mode = getMode(batch);
                     shader.setUniform("mode", mode);
-                    if (batch.texture != null) batch.texture.bind(0);
+                    // Atlas textures are already bound to units 0 and 1
                     if (batch.mesh != null) batch.mesh.render();
                 }
                 // reset mode
@@ -520,56 +545,57 @@ public class Render {
                         float[] lightLevels = new float[]{1.0f, 1.0f, 1.0f, 1.0f};
                         // --- FIN LOGIQUE LUMIÈRE GREEDY ---
                         // Génération des quads selon la face
+                        float[][] atlasUVs = getAtlasUVs(tex);
                         switch (f) {
                             case 0: { // +X at x=w, u=z, v=y
                                 float x0 = w + 1; // face sits at +X side
                                 float y1 = v + height;
                                 float z1 = u + width;
-                                addQuad(acc.verts, acc.inds,
+                                addQuadWithUVs(acc.verts, acc.inds,
                                         new float[]{x0, (float) v, z1}, new float[]{x0, (float) v, (float) u}, new float[]{x0, y1, (float) u}, new float[]{x0, y1, z1},
-                                        normal, acc.indexOffset, lightLevels, biomeColor);
+                                        normal, acc.indexOffset, lightLevels, biomeColor, atlasUVs);
                                 acc.indexOffset += 4;
                                 break; }
                             case 1: { // -X at x=w, u=z, v=y
                                 float y1 = v + height;
                                 float z1 = u + width;
-                                addQuad(acc.verts, acc.inds,
+                                addQuadWithUVs(acc.verts, acc.inds,
                                         new float[]{(float) w, (float) v, (float) u}, new float[]{(float) w, (float) v, z1}, new float[]{(float) w, y1, z1}, new float[]{(float) w, y1, (float) u},
-                                        normal, acc.indexOffset, lightLevels, biomeColor);
+                                        normal, acc.indexOffset, lightLevels, biomeColor, atlasUVs);
                                 acc.indexOffset += 4;
                                 break; }
                             case 2: { // +Y at y=w, u=x, v=z
                                 float y0 = w + 1; // top face at +Y side
                                 float x1 = u + width;
                                 float z1 = v + height;
-                                addQuad(acc.verts, acc.inds,
+                                addQuadWithUVs(acc.verts, acc.inds,
                                         new float[]{(float) u, y0, (float) v}, new float[]{(float) u, y0, z1}, new float[]{x1, y0, z1}, new float[]{x1, y0, (float) v},
-                                        normal, acc.indexOffset, lightLevels, biomeColor);
+                                        normal, acc.indexOffset, lightLevels, biomeColor, atlasUVs);
                                 acc.indexOffset += 4;
                                 break; }
                             case 3: { // -Y at y=w, u=x, v=z
                                 float x1 = u + width;
                                 float z1 = v + height;
-                                addQuad(acc.verts, acc.inds,
+                                addQuadWithUVs(acc.verts, acc.inds,
                                         new float[]{(float) u, (float) w, (float) v}, new float[]{x1, (float) w, (float) v}, new float[]{x1, (float) w, z1}, new float[]{(float) u, (float) w, z1},
-                                        normal, acc.indexOffset, lightLevels, biomeColor);
+                                        normal, acc.indexOffset, lightLevels, biomeColor, atlasUVs);
                                 acc.indexOffset += 4;
                                 break; }
                             case 4: { // +Z at z=w, u=x, v=y
                                 float z0 = w + 1; // front face at +Z side
                                 float x1 = u + width;
                                 float y1 = v + height;
-                                addQuad(acc.verts, acc.inds,
+                                addQuadWithUVs(acc.verts, acc.inds,
                                         new float[]{(float) u, (float) v, z0}, new float[]{x1, (float) v, z0}, new float[]{x1, y1, z0}, new float[]{(float) u, y1, z0},
-                                        normal, acc.indexOffset, lightLevels, biomeColor);
+                                        normal, acc.indexOffset, lightLevels, biomeColor, atlasUVs);
                                 acc.indexOffset += 4;
                                 break; }
                             default: { // 5: -Z at z=w, u=x, v=y
                                 float x1 = u + width;
                                 float y1 = v + height;
-                                addQuad(acc.verts, acc.inds,
+                                addQuadWithUVs(acc.verts, acc.inds,
                                         new float[]{x1, (float) v, (float) w}, new float[]{(float) u, (float) v, (float) w}, new float[]{(float) u, y1, (float) w}, new float[]{x1, y1, (float) w},
-                                        normal, acc.indexOffset, lightLevels, biomeColor);
+                                        normal, acc.indexOffset, lightLevels, biomeColor, atlasUVs);
                                 acc.indexOffset += 4;
                                 break; }
                         }
@@ -588,6 +614,7 @@ public class Render {
     // Arrêt du thread pool à la fermeture
     public void shutdown() {
         meshExecutor.shutdown();
+        textureAtlas.cleanup();
     }
 
     public static class Acc {
@@ -653,11 +680,12 @@ public class Render {
                             };
                         };
                         // --- Ajout couleur biome pour tintable ---
+                        float[][] atlasUVs = getAtlasUVs(texName);
                         if (block instanceof Tintable tintable) {
                             Biome biome = world.getBiomeAt(wx, wz);
-                            addFace(acc.verts, acc.inds, x, y, z, f, NORMALS[f], acc.indexOffset, lightLevels, biome.getByTint(tintable.getTintType()));
+                            addFaceWithUVs(acc.verts, acc.inds, x, y, z, f, NORMALS[f], acc.indexOffset, lightLevels, biome.getByTint(tintable.getTintType()), atlasUVs);
                         } else {
-                            addFace(acc.verts, acc.inds, x, y, z, f, NORMALS[f], acc.indexOffset, lightLevels, Biome.NORMAL.getByTint(TintType.GRASS));
+                            addFaceWithUVs(acc.verts, acc.inds, x, y, z, f, NORMALS[f], acc.indexOffset, lightLevels, Biome.NORMAL.getByTint(TintType.GRASS), atlasUVs);
                         }
                         acc.indexOffset += 4;
                     }
@@ -689,9 +717,28 @@ public class Render {
         return convertAccsToRawMeshData(accs);
     }
 
-    // Ajoute un quad à la liste des vertex et indices, AVEC couleur biome
+    // Helper method to get atlas UV coordinates for a texture
+    private float[][] getAtlasUVs(String textureName) {
+        TextureAtlas.UVRegion region = textureAtlas.getRegion(textureName);
+        if (region != null) {
+            return new float[][]{
+                {region.u0, region.v0}, // bottom-left
+                {region.u1, region.v0}, // bottom-right
+                {region.u1, region.v1}, // top-right
+                {region.u0, region.v1}  // top-left
+            };
+        } else {
+            // Fallback to full texture UVs if not found in atlas
+            return new float[][]{{0,0},{1,0},{1,1},{0,1}};
+        }
+    }
     private static void addQuad(List<Float> verts, List<Integer> inds, float[] c0, float[] c1, float[] c2, float[] c3, Vector3f normal, int indexOffset, float[] lightLevels, float[] biomeColor) {
         float[][] uvs = new float[][]{{0,0},{1,0},{1,1},{0,1}};
+        addQuadWithUVs(verts, inds, c0, c1, c2, c3, normal, indexOffset, lightLevels, biomeColor, uvs);
+    }
+
+    // Ajoute un quad avec des coordonnées UV personnalisées (pour atlas)
+    private static void addQuadWithUVs(List<Float> verts, List<Integer> inds, float[] c0, float[] c1, float[] c2, float[] c3, Vector3f normal, int indexOffset, float[] lightLevels, float[] biomeColor, float[][] uvs) {
         float[][] corners = new float[][]{c0, c1, c2, c3};
         for (int i = 0; i < 4; i++) {
             float[] c = corners[i];
@@ -707,6 +754,13 @@ public class Render {
 
     // Ajoute une face de cube à la liste
     private static void addFace(List<Float> verts, List<Integer> inds, int x, int y, int z, int f, Vector3f normal, int indexOffset, float[] lightLevels, Vector3f biomeColor) {
+        // For backward compatibility, use default UVs
+        float[][] uvs = new float[][]{{0,0},{1,0},{1,1},{0,1}};
+        addFaceWithUVs(verts, inds, x, y, z, f, normal, indexOffset, lightLevels, biomeColor, uvs);
+    }
+
+    // Ajoute une face de cube avec des UVs personnalisées
+    private static void addFaceWithUVs(List<Float> verts, List<Integer> inds, int x, int y, int z, int f, Vector3f normal, int indexOffset, float[] lightLevels, Vector3f biomeColor, float[][] uvs) {
         float[][] corners = switch (f) {
             case 0 ->
                     new float[][]{{(float) x + 1, (float) y, (float) z + 1}, {(float) x + 1, (float) y, (float) z}, {(float) x + 1, (float) y + 1, (float) z}, {(float) x + 1, (float) y + 1, (float) z + 1}};
@@ -722,7 +776,6 @@ public class Render {
                     new float[][]{{(float) x + 1, (float) y, (float) z}, {(float) x, (float) y, (float) z}, {(float) x, (float) y + 1, (float) z}, {(float) x + 1, (float) y + 1, (float) z}};
         };
         float[] color = new float[]{biomeColor.x, biomeColor.y, biomeColor.z}; // Couleur du biome
-        float[][] uvs = new float[][]{{0,0},{1,0},{1,1},{0,1}};
         for (int i = 0; i < 4; i++) {
             float[] c = corners[i];
             verts.add(c[0]); verts.add(c[1]); verts.add(c[2]);
