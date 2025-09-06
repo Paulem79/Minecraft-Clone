@@ -20,6 +20,7 @@ import static org.lwjgl.system.MemoryStack.stackPush;
 /**
  * TextureAtlas combines multiple block textures into a single atlas texture
  * to reduce the number of texture binds per frame and enable batching.
+ * Supports separate base and overlay atlases for overlay textures.
  */
 public class TextureAtlas {
     
@@ -34,31 +35,84 @@ public class TextureAtlas {
         }
     }
     
-    private int textureId;
+    private int baseTextureId;
+    private int overlayTextureId;
     private int width, height;
-    private final Map<String, UVRegion> uvRegions = new HashMap<>();
+    private final Map<String, UVRegion> baseUvRegions = new HashMap<>();
+    private final Map<String, UVRegion> overlayUvRegions = new HashMap<>();
     
     /**
-     * Builds texture atlas from all PNG files in /textures/blocks/
-     * Each texture should be the same size for proper atlas layout.
+     * Builds texture atlas from all PNG files in /textures/
+     * Creates separate atlases for base textures and overlay textures.
      */
     public void buildAtlas() {
-        List<String> texturePaths = new ArrayList<>();
-        List<ByteBuffer> textureData = new ArrayList<>();
         int textureSize = 16; // Assume 16x16 textures, should match actual texture size
         
-        // List of block texture names
-        String[] blockTextures = {
-            "stone", "dirt", "grass_block_side", "grass_block_top", 
-            "grass_block_side_overlay", "log", "leaves"
+        // Define base textures and their corresponding overlays
+        Map<String, String> baseToOverlayMap = new HashMap<>();
+        baseToOverlayMap.put("grass_block_side", "grass_block_side_overlay");
+        
+        String[] baseTextures = {
+            "stone", "dirt", "grass_block_side", "grass_block_top", "log", "leaves"
         };
         
+        // Build base atlas
+        buildSingleAtlas(baseTextures, textureSize, true);
+        
+        // Build overlay atlas - must match the order and positioning of base atlas
+        List<String> overlayTextures = new ArrayList<>();
+        for (String baseTexture : baseTextures) {
+            String overlayTexture = baseToOverlayMap.get(baseTexture);
+            if (overlayTexture != null) {
+                overlayTextures.add(overlayTexture);
+            } else {
+                // Add transparent/empty texture to maintain atlas alignment
+                overlayTextures.add(null);
+            }
+        }
+        
+        buildSingleAtlas(overlayTextures.toArray(new String[0]), textureSize, false);
+        
+        System.out.println("Texture atlases created: base " + width + "x" + height + 
+                          ", overlay " + width + "x" + height);
+    }
+    
+    private void buildSingleAtlas(String[] textureNames, int textureSize, boolean isBase) {
+        List<String> texturePaths = new ArrayList<>();
+        List<ByteBuffer> textureData = new ArrayList<>();
+        
         // Load each texture
-        for (String texName : blockTextures) {
+        for (String texName : textureNames) {
+            if (texName == null) {
+                // Add empty/transparent texture data for alignment
+                ByteBuffer emptyTexture = MemoryUtil.memAlloc(textureSize * textureSize * 4);
+                for (int i = 0; i < textureSize * textureSize * 4; i += 4) {
+                    emptyTexture.put(i, (byte) 0);     // R
+                    emptyTexture.put(i + 1, (byte) 0); // G
+                    emptyTexture.put(i + 2, (byte) 0); // B
+                    emptyTexture.put(i + 3, (byte) 0); // A (transparent)
+                }
+                emptyTexture.flip();
+                texturePaths.add(null);
+                textureData.add(emptyTexture);
+                continue;
+            }
+            
             String resourcePath = "/textures/" + texName + ".png";
             try (InputStream inputStream = TextureAtlas.class.getResourceAsStream(resourcePath)) {
                 if (inputStream == null) {
                     System.err.println("Warning: Could not find texture " + resourcePath);
+                    // Add empty texture for missing textures to maintain atlas alignment
+                    ByteBuffer emptyTexture = MemoryUtil.memAlloc(textureSize * textureSize * 4);
+                    for (int i = 0; i < textureSize * textureSize * 4; i += 4) {
+                        emptyTexture.put(i, (byte) 0);     // R
+                        emptyTexture.put(i + 1, (byte) 0); // G
+                        emptyTexture.put(i + 2, (byte) 0); // B
+                        emptyTexture.put(i + 3, (byte) 0); // A (transparent)
+                    }
+                    emptyTexture.flip();
+                    texturePaths.add(null);
+                    textureData.add(emptyTexture);
                     continue;
                 }
                 
@@ -94,7 +148,12 @@ public class TextureAtlas {
         }
         
         if (textureData.isEmpty()) {
-            throw new RuntimeException("No textures loaded for atlas");
+            if (isBase) {
+                throw new RuntimeException("No base textures loaded for atlas");
+            } else {
+                // No overlay textures is OK, just skip overlay atlas creation
+                return;
+            }
         }
         
         // Calculate atlas dimensions - simple grid layout
@@ -113,6 +172,8 @@ public class TextureAtlas {
         atlasBuffer.flip();
         
         // Copy textures into atlas and calculate UV regions
+        Map<String, UVRegion> targetRegions = isBase ? baseUvRegions : overlayUvRegions;
+        
         for (int i = 0; i < textureData.size(); i++) {
             int atlasX = (i % atlasSize) * textureSize;
             int atlasY = (i / atlasSize) * textureSize;
@@ -139,14 +200,21 @@ public class TextureAtlas {
             float u1 = (float) (atlasX + textureSize) / width - padding;
             float v1 = (float) (atlasY + textureSize) / height - padding;
             
-            uvRegions.put(texturePaths.get(i), new UVRegion(u0, v0, u1, v1));
+            String texturePath = texturePaths.get(i);
+            if (texturePath != null) {
+                targetRegions.put(texturePath, new UVRegion(u0, v0, u1, v1));
+            }
             
-            // Free the individual texture buffer
-            STBImage.stbi_image_free(texData);
+            // Free the individual texture buffer (but not empty ones we created)
+            if (texturePath != null) {
+                STBImage.stbi_image_free(texData);
+            } else {
+                MemoryUtil.memFree(texData);
+            }
         }
         
         // Create OpenGL texture
-        textureId = glGenTextures();
+        int textureId = glGenTextures();
         glBindTexture(GL_TEXTURE_2D, textureId);
         
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -158,29 +226,55 @@ public class TextureAtlas {
         
         glBindTexture(GL_TEXTURE_2D, 0);
         
+        // Store texture ID
+        if (isBase) {
+            baseTextureId = textureId;
+        } else {
+            overlayTextureId = textureId;
+        }
+        
         // Free atlas buffer
         MemoryUtil.memFree(atlasBuffer);
-        
-        System.out.println("Texture atlas created: " + width + "x" + height + " with " + textureData.size() + " textures");
     }
     
     public void bind(int unit) {
+        // Bind base atlas to the specified unit
         glActiveTexture(GL_TEXTURE0 + unit);
-        glBindTexture(GL_TEXTURE_2D, textureId);
+        glBindTexture(GL_TEXTURE_2D, baseTextureId);
+    }
+    
+    public void bindOverlay(int unit) {
+        // Bind overlay atlas to the specified unit (if it exists)
+        if (overlayTextureId != 0) {
+            glActiveTexture(GL_TEXTURE0 + unit);
+            glBindTexture(GL_TEXTURE_2D, overlayTextureId);
+        }
     }
     
     public UVRegion getRegion(String texturePath) {
-        return uvRegions.get(texturePath);
+        return baseUvRegions.get(texturePath);
+    }
+    
+    public UVRegion getOverlayRegion(String texturePath) {
+        return overlayUvRegions.get(texturePath);
     }
     
     public boolean hasRegion(String texturePath) {
-        return uvRegions.containsKey(texturePath);
+        return baseUvRegions.containsKey(texturePath);
+    }
+    
+    public boolean hasOverlayRegion(String texturePath) {
+        return overlayUvRegions.containsKey(texturePath);
     }
     
     public void cleanup() {
-        if (textureId != 0) {
-            glDeleteTextures(textureId);
-            textureId = 0;
+        if (baseTextureId != 0) {
+            glDeleteTextures(baseTextureId);
+            baseTextureId = 0;
+        }
+        if (overlayTextureId != 0) {
+            glDeleteTextures(overlayTextureId);
+            overlayTextureId = 0;
         }
     }
 }

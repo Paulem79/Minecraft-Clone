@@ -223,13 +223,14 @@ public class Render {
                 Matrix4f model = new Matrix4f().translation(c.getOriginX(), 0, c.getOriginZ());
                 shader.setUniformMat4("model", model);
                 
-                // Bind texture atlas once for all batches in this chunk
-                textureAtlas.bind(0);
+                // Bind texture atlases for all batches in this chunk
+                textureAtlas.bind(0);           // Base textures to unit 0
+                textureAtlas.bindOverlay(1);    // Overlay textures to unit 1
                 
                 for (MeshBatch batch : cm.list) {
                     int mode = getMode(batch);
                     shader.setUniform("mode", mode);
-                    // No need to bind individual textures - atlas is already bound
+                    // Atlas textures are already bound to units 0 and 1
                     if (batch.mesh != null) batch.mesh.render();
                 }
                 // reset mode
