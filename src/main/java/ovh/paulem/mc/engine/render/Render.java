@@ -120,7 +120,7 @@ public class Render {
         this.hotbarRenderer = new HotbarRenderer(hotbar, shader);
     }
 
-    public void render(Window window) {
+    public void render(Window window, float frameDt) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         shader.use();
@@ -226,8 +226,8 @@ public class Render {
             renderChunkBorders(projection, view);
         }
 
-        // Mise à jour et rendu des particules
-        particleSystem.update((float) MC.INSTANCE.getDeltaTime(), world);
+        // Mise à jour et rendu des particules (utilise frameDt réel)
+        particleSystem.update(frameDt, world);
         renderParticles(projection, view);
 
         // Dessiner la hotbar si elle est initialisée (après les particules)
