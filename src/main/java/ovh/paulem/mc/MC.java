@@ -284,7 +284,6 @@ public class MC {
                 handleOptionsInput();
             } else {
                 // Sélection directe hotbar avec les touches numériques (quand menu fermé)
-                // TODO: Ajouter support pour plus de 9 slots si nécessaire
                 handleHotbarInput();
             }
             
