@@ -5,7 +5,9 @@ import ovh.paulem.mc.engine.Camera;
 import ovh.paulem.mc.engine.Hotbar;
 import ovh.paulem.mc.engine.Player;
 import ovh.paulem.mc.engine.Raycaster;
+import ovh.paulem.mc.engine.RenderOptions;
 import ovh.paulem.mc.engine.Window;
+import ovh.paulem.mc.engine.render.OptionsRenderer;
 import ovh.paulem.mc.engine.render.Render;
 import ovh.paulem.mc.math.ArraysUtils;
 import ovh.paulem.mc.world.RaycastResult;
@@ -19,6 +21,8 @@ import ovh.paulem.mc.world.block.types.Block;
 import java.awt.*;
 
 import static org.lwjgl.glfw.GLFW.*;
+import static org.lwjgl.opengl.GL11.*;
+import static org.lwjgl.opengl.GL13.GL_MULTISAMPLE;
 import static org.lwjgl.system.MemoryUtil.NULL;
 
 public class MC {
@@ -32,11 +36,16 @@ public class MC {
     @Getter private World world;
     @Getter private Player player;
     @Getter private Hotbar hotbar;
+    @Getter private RenderOptions renderOptions;
+    @Getter private OptionsRenderer optionsRenderer;
 
     // Rayon sélection bloc
     private static final float RAY_MAX_DISTANCE = 5.0f;
     private boolean leftMousePressed = false;
     private boolean rightMousePressed = false;
+    private boolean f1Pressed = false;
+    private boolean key1Pressed = false, key2Pressed = false, key3Pressed = false;
+    private boolean key4Pressed = false, key5Pressed = false, key6Pressed = false, key7Pressed = false;
     private long lastBlockActionTime = 0;
     private static final long BLOCK_ACTION_COOLDOWN = 0; // ms
 
@@ -89,6 +98,11 @@ public class MC {
         glfwDefaultWindowHints();
         glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+        
+        // Configuration de l'antialiasing (MSAA)
+        if (renderOptions.isAntialiasingEnabled()) {
+            glfwWindowHint(GLFW_SAMPLES, renderOptions.getAntialiasingLevel());
+        }
 
         GraphicsDevice gd = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
         int width = (gd.getDisplayMode().getWidth()/5)*3;
@@ -115,10 +129,15 @@ public class MC {
 
         // Hotbar & rendu
         hotbar = new Hotbar();
+        renderOptions = Values.renderOptions; // Utiliser l'instance globale
         windowWrapper = new Window(width, height, window);
         render = new Render();
         render.init();
         render.setHotbar(hotbar);
+        // TODO: Ajouter méthode setRenderOptions à Render si nécessaire
+        
+        // Interface des options
+        optionsRenderer = new OptionsRenderer(renderOptions);
 
         world = new World();
         render.setWorld(world);
@@ -196,6 +215,24 @@ public class MC {
             else if (!currentLeftMouse && leftMousePressed) { leftMousePressed = false; }
             if (currentRightMouse && !rightMousePressed) { rightMousePressed = true; handleBlockPlace(getPlayer()); }
             else if (!currentRightMouse && rightMousePressed) { rightMousePressed = false; }
+            
+            // Gestion des options de rendu (F1 pour ouvrir/fermer)
+            if (glfwGetKey(window, GLFW_KEY_F1) == GLFW_PRESS) {
+                if (!f1Pressed) {
+                    f1Pressed = true;
+                    optionsRenderer.toggleVisibility();
+                }
+            } else {
+                f1Pressed = false;
+            }
+            
+            // Options de rendu raccourcis clavier (uniquement si menu ouvert)
+            if (optionsRenderer.isVisible()) {
+                handleOptionsInput();
+            }
+            
+            // Appliquer les options modifiées
+            applyRenderOptions();
 
             // Steps logiques fixes
             while (accumulator >= FIXED_DT) {
@@ -213,6 +250,9 @@ public class MC {
 
             // Rendu (peut utiliser interpolation si plus tard on stocke states N/N+1)
             render.render(windowWrapper, dt);
+            
+            // Rendu de l'interface des options par-dessus tout
+            optionsRenderer.render(windowWrapper);
 
             glfwSwapBuffers(window);
         }
@@ -275,5 +315,81 @@ public class MC {
             if (newX + 1 > playerMinX && newX < playerMaxX && newY + 1 > playerMinY && newY < playerMaxY && newZ + 1 > playerMinZ && newZ < playerMaxZ) return;
             world.setBlock(newX, newY, newZ, hotbar.getSelectedBlock());
         }
+    }
+    
+    /**
+     * Gère les entrées clavier pour les options de rendu
+     */
+    private void handleOptionsInput() {
+        // Utilisation des touches 1-7 pour modifier les options
+        if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
+            if (!key1Pressed) {
+                key1Pressed = true;
+                renderOptions.adjustRenderDistance(1);
+            }
+        } else { key1Pressed = false; }
+        
+        if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) {
+            if (!key2Pressed) {
+                key2Pressed = true;
+                renderOptions.toggleAntialiasing();
+            }
+        } else { key2Pressed = false; }
+        
+        if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS) {
+            if (!key3Pressed) {
+                key3Pressed = true;
+                renderOptions.cycleAntialiasingLevel();
+            }
+        } else { key3Pressed = false; }
+        
+        if (glfwGetKey(window, GLFW_KEY_4) == GLFW_PRESS) {
+            if (!key4Pressed) {
+                key4Pressed = true;
+                renderOptions.adjustLodDistance(10.0f);
+            }
+        } else { key4Pressed = false; }
+        
+        if (glfwGetKey(window, GLFW_KEY_5) == GLFW_PRESS) {
+            if (!key5Pressed) {
+                key5Pressed = true;
+                renderOptions.toggleLod();
+            }
+        } else { key5Pressed = false; }
+        
+        if (glfwGetKey(window, GLFW_KEY_6) == GLFW_PRESS) {
+            if (!key6Pressed) {
+                key6Pressed = true;
+                renderOptions.toggleVsync();
+            }
+        } else { key6Pressed = false; }
+        
+        if (glfwGetKey(window, GLFW_KEY_7) == GLFW_PRESS) {
+            if (!key7Pressed) {
+                key7Pressed = true;
+                renderOptions.adjustMeshBudget(1);
+            }
+        } else { key7Pressed = false; }
+    }
+    
+    /**
+     * Applique les options de rendu modifiées
+     */
+    private void applyRenderOptions() {
+        // Appliquer V-Sync
+        glfwSwapInterval(renderOptions.isVsyncEnabled() ? 1 : 0);
+        
+        // Mettre à jour l'affichage des bordures de chunk
+        MC.showChunkBorders = renderOptions.isShowChunkBorders();
+        
+        // Appliquer l'antialiasing dynamiquement
+        if (renderOptions.isAntialiasingEnabled()) {
+            glEnable(GL_MULTISAMPLE);
+        } else {
+            glDisable(GL_MULTISAMPLE);
+        }
+        
+        // TODO: Appliquer dynamiquement le niveau d'antialiasing (nécessite recréation du contexte)
+        // TODO: Mettre à jour la distance de rendu pour le monde
     }
 }

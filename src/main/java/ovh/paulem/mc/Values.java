@@ -1,19 +1,34 @@
 package ovh.paulem.mc;
 
+import ovh.paulem.mc.engine.RenderOptions;
+
 public class Values {
-    // Rayon de rendu des chunks autour du joueur
-    public static final int RENDER_RADIUS = 8;
+    // Instance des options de rendu (configurables)
+    public static RenderOptions renderOptions = new RenderOptions();
+    
+    // Rayon de rendu des chunks autour du joueur (maintenant configurable)
+    public static int getRenderRadius() { return renderOptions.getRenderDistance(); }
+    
     // Rayon proche avec chunks détaillés (pleine fidélité); au-delà, stockage compressé/LOD (GreedyChunk)
     public static final int LOD_NEAR_RADIUS = 2;
+    
     // Facteurs de LOD pour les chunks lointains (taille des macro-voxels)
     public static final int LOD_FACTOR_XZ = 2; // groupe 2x2 en X/Z
     public static final int LOD_FACTOR_Y = 2;  // groupe 2 en Y
+    
     // Taille maximale de la lumière (0 = obscurité, 15 = lumière maximale)
     public static final byte MAX_LIGHT = 15;
-    // Budget de chunks à traiter par frame
-    public static final int LIGHT_PER_FRAME_BUDGET = RENDER_RADIUS*10;
-    public static final int MESHES_PER_FRAME_BUDGET = RENDER_RADIUS/4;
-    public static final float GREEDY_DIST = 80.0f;
+    
+    // Budget de chunks à traiter par frame (maintenant configurables)
+    public static int getLightPerFrameBudget() { return getRenderRadius() * 10; }
+    public static int getMeshesPerFrameBudget() { return renderOptions.getMeshesPerFrameBudget(); }
+    public static float getGreedyDistance() { return renderOptions.getLodDistance(); }
+    
+    // Anciens noms pour compatibilité (deprecated)
+    @Deprecated public static final int RENDER_RADIUS = 8;
+    @Deprecated public static final int LIGHT_PER_FRAME_BUDGET = RENDER_RADIUS*10;
+    @Deprecated public static final int MESHES_PER_FRAME_BUDGET = RENDER_RADIUS/4;
+    @Deprecated public static final float GREEDY_DIST = 80.0f;
 
     // Configuration des caves
     public static double BASE_CAVE_SCALE = 0.05; // Échelle de base du bruit pour les caves

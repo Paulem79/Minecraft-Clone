@@ -81,6 +81,12 @@ public class Render {
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
+        
+        // Configuration de l'antialiasing si disponible
+        // TODO: Ajouter méthode pour activer/désactiver l'antialiasing dynamiquement
+        if (Values.renderOptions.isAntialiasingEnabled()) {
+            glEnable(GL_MULTISAMPLE);
+        }
 
         // Couleur de fond
         glClearColor(0.5f, 0.8f, 1.0f, 1.0f);
@@ -150,7 +156,7 @@ public class Render {
         if (world != null) {
             // Rebuild up to a small number of chunk meshes per frame to avoid spikes
             int rebuilt = 0;
-            while (rebuilt < Values.MESHES_PER_FRAME_BUDGET && !meshBuildQueue.isEmpty()) {
+            while (rebuilt < Values.getMeshesPerFrameBudget() && !meshBuildQueue.isEmpty()) {
                 BaseChunk qc = meshBuildQueue.pollFirst();
                 if (qc == null) break;
                 // Determine greedy based on current camera distance
@@ -159,7 +165,7 @@ public class Render {
                 float qdx = camera.getPosition().x - qccx;
                 float qdz = camera.getPosition().z - qccz;
                 float qdist = (float)Math.sqrt(qdx * qdx + qdz * qdz);
-                boolean qGreedy = qdist > Values.GREEDY_DIST;
+                boolean qGreedy = qdist > Values.getGreedyDistance();
                 int qver = qc.getVersion();
                 // Lancer la génération du mesh en tâche asynchrone si pas déjà en cours
                 if (!meshFutures.containsKey(qc)) {
@@ -205,7 +211,7 @@ public class Render {
                 float dx = camX - chunkCenterX;
                 float dz = camZ - chunkCenterZ;
                 float dist = (float) Math.sqrt(dx * dx + dz * dz);
-                boolean useGreedy = dist > Values.GREEDY_DIST;
+                boolean useGreedy = dist > Values.getGreedyDistance();
 
                 ChunkMesh cm = meshCache.get(c);
                 int ver = c.getVersion();
