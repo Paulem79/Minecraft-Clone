@@ -5,7 +5,9 @@ import ovh.paulem.mc.engine.Camera;
 import ovh.paulem.mc.engine.Hotbar;
 import ovh.paulem.mc.engine.Player;
 import ovh.paulem.mc.engine.Raycaster;
+import ovh.paulem.mc.engine.RenderOptions;
 import ovh.paulem.mc.engine.Window;
+import ovh.paulem.mc.engine.render.OptionsRenderer;
 import ovh.paulem.mc.engine.render.Render;
 import ovh.paulem.mc.math.ArraysUtils;
 import ovh.paulem.mc.world.RaycastResult;
@@ -19,6 +21,8 @@ import ovh.paulem.mc.world.block.types.Block;
 import java.awt.*;
 
 import static org.lwjgl.glfw.GLFW.*;
+import static org.lwjgl.opengl.GL11.*;
+import static org.lwjgl.opengl.GL13.GL_MULTISAMPLE;
 import static org.lwjgl.system.MemoryUtil.NULL;
 
 public class MC {
@@ -32,11 +36,17 @@ public class MC {
     @Getter private World world;
     @Getter private Player player;
     @Getter private Hotbar hotbar;
+    @Getter private RenderOptions renderOptions;
+    @Getter private OptionsRenderer optionsRenderer;
 
     // Rayon sélection bloc
     private static final float RAY_MAX_DISTANCE = 5.0f;
     private boolean leftMousePressed = false;
     private boolean rightMousePressed = false;
+    private boolean f1Pressed = false;
+    private boolean key1Pressed = false, key2Pressed = false, key3Pressed = false;
+    private boolean key4Pressed = false, key5Pressed = false, key6Pressed = false, key7Pressed = false;
+    private boolean[] hotbarKeyPressed = new boolean[9]; // Pour les touches 1-9 de sélection hotbar
     private long lastBlockActionTime = 0;
     private static final long BLOCK_ACTION_COOLDOWN = 0; // ms
 
@@ -89,6 +99,11 @@ public class MC {
         glfwDefaultWindowHints();
         glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+        
+        // Configuration de l'antialiasing (MSAA)
+        if (renderOptions.isAntialiasingEnabled()) {
+            glfwWindowHint(GLFW_SAMPLES, renderOptions.getAntialiasingLevel());
+        }
 
         GraphicsDevice gd = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
         int width = (gd.getDisplayMode().getWidth()/5)*3;
@@ -112,13 +127,70 @@ public class MC {
             pendingYawDelta += dx; // yaw = rotation.y
             pendingPitchDelta += dy; // pitch = rotation.x
         });
+        
+        // Callback pour la molette de souris (sélection hotbar + zoom caméra)
+        glfwSetScrollCallback(window, (w, xoffset, yoffset) -> {
+            // Si Ctrl ou Alt est pressé, utiliser pour le zoom de caméra
+            if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS || 
+                glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS ||
+                glfwGetKey(window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS ||
+                glfwGetKey(window, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS) {
+                
+                // Zoom de caméra (ajuster le FOV via windowWrapper)
+                if (windowWrapper != null) {
+                    float zoomDelta = (float) (yoffset * 5.0); // 5 degrés par cran
+                    // Note: Le zoom via FOV pourrait être implémenté ici si Window/WindowWrapper
+                    // avait des méthodes getFov/setFov dynamiques
+                    System.out.println("Zoom demandé: " + (yoffset > 0 ? "avant" : "arrière"));
+                }
+            } else {
+                // Sélection hotbar normale
+                if (yoffset > 0) {
+                    hotbar.previousSlot(); // Molette vers le haut = slot précédent
+                } else if (yoffset < 0) {
+                    hotbar.nextSlot(); // Molette vers le bas = slot suivant
+                }
+            }
+        });
 
         // Hotbar & rendu
         hotbar = new Hotbar();
+        renderOptions = Values.renderOptions; // Utiliser l'instance globale
+        
+        // Charger la configuration sauvegardée
+        renderOptions.loadFromFile("config/render_options.properties");
+        
+        // Ajouter un listener pour les changements d'options
+        renderOptions.addChangeListener(new RenderOptions.OptionsChangeListener() {
+            @Override
+            public void onRenderDistanceChanged(int oldValue, int newValue) {
+                // La distance de rendu est automatiquement mise à jour via Values.getRenderRadius()
+                // Le monde utilisera automatiquement la nouvelle valeur lors du prochain update
+                System.out.println("Distance de rendu mise à jour: " + oldValue + " -> " + newValue);
+            }
+            
+            @Override
+            public void onVsyncChanged(boolean enabled) {
+                // Appliquer le changement de V-Sync immédiatement
+                glfwSwapInterval(enabled ? 1 : 0);
+                System.out.println("V-Sync " + (enabled ? "activé" : "désactivé"));
+            }
+            
+            @Override
+            public void onLodDistanceChanged(float oldValue, float newValue) {
+                // La distance LOD est automatiquement mise à jour via Values.getGreedyDistance()
+                System.out.println("Distance LOD mise à jour: " + oldValue + " -> " + newValue);
+            }
+        });
+        
         windowWrapper = new Window(width, height, window);
         render = new Render();
         render.init();
         render.setHotbar(hotbar);
+        render.setRenderOptions(renderOptions);
+        
+        // Interface des options
+        optionsRenderer = new OptionsRenderer(renderOptions);
 
         world = new World();
         render.setWorld(world);
@@ -196,6 +268,27 @@ public class MC {
             else if (!currentLeftMouse && leftMousePressed) { leftMousePressed = false; }
             if (currentRightMouse && !rightMousePressed) { rightMousePressed = true; handleBlockPlace(getPlayer()); }
             else if (!currentRightMouse && rightMousePressed) { rightMousePressed = false; }
+            
+            // Gestion des options de rendu (F1 pour ouvrir/fermer)
+            if (glfwGetKey(window, GLFW_KEY_F1) == GLFW_PRESS) {
+                if (!f1Pressed) {
+                    f1Pressed = true;
+                    optionsRenderer.toggleVisibility();
+                }
+            } else {
+                f1Pressed = false;
+            }
+            
+            // Options de rendu raccourcis clavier (uniquement si menu ouvert)
+            if (optionsRenderer.isVisible()) {
+                handleOptionsInput();
+            } else {
+                // Sélection directe hotbar avec les touches numériques (quand menu fermé)
+                handleHotbarInput();
+            }
+            
+            // Appliquer les options modifiées
+            applyRenderOptions();
 
             // Steps logiques fixes
             while (accumulator >= FIXED_DT) {
@@ -213,12 +306,20 @@ public class MC {
 
             // Rendu (peut utiliser interpolation si plus tard on stocke states N/N+1)
             render.render(windowWrapper, dt);
+            
+            // Rendu de l'interface des options par-dessus tout
+            optionsRenderer.render(windowWrapper);
 
             glfwSwapBuffers(window);
         }
     }
 
     private void cleanup() {
+        // Sauvegarder la configuration avant de fermer
+        if (renderOptions != null) {
+            renderOptions.saveToFile("config/render_options.properties");
+        }
+        
         if (world != null) world.shutdown();
         render.shutdown();
         glfwDestroyWindow(window);
@@ -275,5 +376,145 @@ public class MC {
             if (newX + 1 > playerMinX && newX < playerMaxX && newY + 1 > playerMinY && newY < playerMaxY && newZ + 1 > playerMinZ && newZ < playerMaxZ) return;
             world.setBlock(newX, newY, newZ, hotbar.getSelectedBlock());
         }
+    }
+    
+    /**
+     * Gère les entrées clavier pour les options de rendu
+     */
+    private void handleOptionsInput() {
+        // Utilisation des touches 1-7 pour modifier les options
+        if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
+            if (!key1Pressed) {
+                key1Pressed = true;
+                renderOptions.adjustRenderDistance(1);
+            }
+        } else { key1Pressed = false; }
+        
+        if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) {
+            if (!key2Pressed) {
+                key2Pressed = true;
+                renderOptions.toggleAntialiasing();
+            }
+        } else { key2Pressed = false; }
+        
+        if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS) {
+            if (!key3Pressed) {
+                key3Pressed = true;
+                renderOptions.cycleAntialiasingLevel();
+            }
+        } else { key3Pressed = false; }
+        
+        if (glfwGetKey(window, GLFW_KEY_4) == GLFW_PRESS) {
+            if (!key4Pressed) {
+                key4Pressed = true;
+                renderOptions.adjustLodDistance(10.0f);
+            }
+        } else { key4Pressed = false; }
+        
+        if (glfwGetKey(window, GLFW_KEY_5) == GLFW_PRESS) {
+            if (!key5Pressed) {
+                key5Pressed = true;
+                renderOptions.toggleLod();
+            }
+        } else { key5Pressed = false; }
+        
+        if (glfwGetKey(window, GLFW_KEY_6) == GLFW_PRESS) {
+            if (!key6Pressed) {
+                key6Pressed = true;
+                renderOptions.toggleVsync();
+            }
+        } else { key6Pressed = false; }
+        
+        if (glfwGetKey(window, GLFW_KEY_7) == GLFW_PRESS) {
+            if (!key7Pressed) {
+                key7Pressed = true;
+                renderOptions.adjustMeshBudget(1);
+            }
+        } else { key7Pressed = false; }
+    }
+    
+    /**
+     * Gère la sélection directe de la hotbar avec les touches numériques
+     * Supporte tous les blocs disponibles avec les touches 1-9 et les touches étendues
+     */
+    private void handleHotbarInput() {
+        // Sélection directe avec touches 1-9
+        for (int i = 1; i <= 9; i++) {
+            int keyCode = GLFW_KEY_0 + i; // GLFW_KEY_1 à GLFW_KEY_9
+            if (glfwGetKey(window, keyCode) == GLFW_PRESS) {
+                if (!hotbarKeyPressed[i-1]) {
+                    hotbarKeyPressed[i-1] = true;
+                    // Sélectionner le slot (index 0-8)
+                    if (i-1 < hotbar.BLOCKS.size()) {
+                        hotbar.setSelectedSlot(i-1);
+                    }
+                }
+            } else {
+                hotbarKeyPressed[i-1] = false;
+            }
+        }
+        
+        // Support étendu avec Shift+touches pour les slots 10-18 si disponibles
+        if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS) {
+            for (int i = 1; i <= 9; i++) {
+                int keyCode = GLFW_KEY_0 + i;
+                int extendedSlot = i + 8; // Slots 9-17 (index 9-17)
+                if (glfwGetKey(window, keyCode) == GLFW_PRESS) {
+                    if (!hotbarKeyPressed[i-1]) {
+                        hotbarKeyPressed[i-1] = true;
+                        if (extendedSlot < hotbar.BLOCKS.size()) {
+                            hotbar.setSelectedSlot(extendedSlot);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * Applique les options de rendu modifiées avec gestion fine des changements
+     */
+    private void applyRenderOptions() {
+        // Appliquer V-Sync
+        glfwSwapInterval(renderOptions.isVsyncEnabled() ? 1 : 0);
+        
+        // Mettre à jour l'affichage des bordures de chunk
+        MC.showChunkBorders = renderOptions.isShowChunkBorders();
+        
+        // Appliquer l'antialiasing dynamiquement
+        if (renderOptions.isAntialiasingEnabled()) {
+            glEnable(GL_MULTISAMPLE);
+        } else {
+            glDisable(GL_MULTISAMPLE);
+        }
+        
+        // Mettre à jour la distance de rendu pour le monde en temps réel
+        // Note: Values.getRenderRadius() et Values.getGreedyDistance() récupèrent automatiquement
+        // les valeurs depuis renderOptions, donc aucune action supplémentaire n'est nécessaire
+        
+        // Implémenter fog configurable basé sur la distance de rendu
+        float fogDistance = Values.getRenderRadius() * 16.0f * 0.8f; // 80% de la distance max
+        glFogf(GL_FOG_START, fogDistance * 0.5f);
+        glFogf(GL_FOG_END, fogDistance);
+        
+        // Configurer les options de qualité basées sur les paramètres
+        if (renderOptions.getMeshesPerFrameBudget() > 5) {
+            // Mode haute qualité
+            glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);
+            glHint(GL_POLYGON_SMOOTH_HINT, GL_NICEST);
+        } else {
+            // Mode performance
+            glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_FASTEST);
+            glHint(GL_POLYGON_SMOOTH_HINT, GL_FASTEST);
+        }
+        
+        // Note: Le niveau d'antialiasing nécessite une recréation du contexte OpenGL
+        // Pour l'instant, seule l'activation/désactivation est supportée dynamiquement
+        
+        // Note: Le changement de résolution nécessiterait une reconfiguration de la fenêtre
+        // Cette fonctionnalité pourrait être ajoutée dans une future mise à jour
+        
+        // Note: Les options de post-processing (bloom, tone mapping) nécessitent
+        // un pipeline de rendu plus avancé avec des framebuffers
     }
 }

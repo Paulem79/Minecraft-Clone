@@ -256,7 +256,7 @@ public class World {
         getLightEngine().processLightQueue();
 
         // Assurez-vous que les chunks autour du joueur sont chargés
-        ensureChunksAround(pcx, pcz, Values.RENDER_RADIUS);
+        ensureChunksAround(pcx, pcz, Values.getRenderRadius());
 
         // Décharge les chunks éloignés et sauvegarde les chunks modifiés
         unloadDistantChunks(pcx, pcz);
@@ -296,7 +296,7 @@ public class World {
     }
 
     private void unloadDistantChunks(int playerCx, int playerCz) {
-        int unloadRadius = Values.RENDER_RADIUS + unloadBuffer;
+        int unloadRadius = Values.getRenderRadius() + unloadBuffer;
         int unloadRadiusSq = unloadRadius * unloadRadius;
         List<Long> chunksToUnload = new ArrayList<>();
         for (Map.Entry<Long, Future<BaseChunk>> entry : chunkFutures.entrySet()) {

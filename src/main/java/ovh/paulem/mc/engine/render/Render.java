@@ -59,10 +59,32 @@ public class Render {
     // Queue of chunks that need mesh (re)build; processed with small budget per frame to avoid spikes
     private final ArrayDeque<BaseChunk> meshBuildQueue = new ArrayDeque<>();
 
-    // Ajout d'un ExecutorService pour le meshing parallèle
-    private final ExecutorService meshExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
-    // Map temporaire pour stocker les résultats de meshing asynchrone
+    // Ajout d'un ExecutorService optimisé pour le meshing parallèle
+    // Configurable basé sur les options de performance et le matériel disponible
+    private final ExecutorService meshExecutor = createOptimizedMeshExecutor();
+    
+    // Map temporaire pour stocker les résultats de meshing asynchrone avec gestion de priorité
     private final Map<BaseChunk, Future<MeshBuildResult>> meshFutures = new ConcurrentHashMap<>();
+    
+    /**
+     * Crée un ExecutorService optimisé basé sur les options de performance
+     */
+    private ExecutorService createOptimizedMeshExecutor() {
+        int threadCount = Math.min(Runtime.getRuntime().availableProcessors(), 
+                                  Math.max(2, Values.renderOptions.getMeshesPerFrameBudget()));
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(
+            threadCount, threadCount,
+            60L, TimeUnit.SECONDS,
+            new PriorityBlockingQueue<>(), // Queue avec priorité pour chunks proches
+            r -> {
+                Thread t = new Thread(r, "ChunkMeshWorker");
+                t.setDaemon(true);
+                return t;
+            }
+        );
+        executor.allowCoreThreadTimeOut(true);
+        return executor;
+    }
 
     private ParticleSystem particleSystem = new ParticleSystem();
     private Shader particleShader;
@@ -81,6 +103,48 @@ public class Render {
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
+        
+        // Configuration de l'antialiasing si disponible
+        // Configuration avancée de l'antialiasing et des options de rendu
+        configureRenderingFeatures();
+    }
+    
+    /**
+     * Configure les fonctionnalités de rendu avancées basées sur les options et capacités matérielles
+     */
+    private void configureRenderingFeatures() {
+        // Antialiasing configurable dynamiquement
+        if (Values.renderOptions.isAntialiasingEnabled()) {
+            glEnable(GL_MULTISAMPLE);
+            // Note: Le changement de niveau d'antialiasing (2x, 4x, 8x, 16x) nécessite
+            // une recréation du contexte OpenGL, ce qui est complexe à implémenter en runtime
+            System.out.println("MSAA activé (" + Values.renderOptions.getAntialiasingLevel() + "x)");
+        }
+        
+        // Configuration des hints OpenGL basée sur les capacités matérielles
+        String renderer = glGetString(GL_RENDERER);
+        String vendor = glGetString(GL_VENDOR);
+        System.out.println("GPU détecté: " + vendor + " " + renderer);
+        
+        // Optimisations automatiques basées sur le matériel
+        if (renderer != null && (renderer.contains("Intel") || renderer.contains("integrated"))) {
+            // Configuration pour GPU intégré - privilégier les performances
+            glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_FASTEST);
+            glHint(GL_POLYGON_SMOOTH_HINT, GL_FASTEST);
+            System.out.println("Configuration performance pour GPU intégré");
+        } else {
+            // Configuration pour GPU dédié - privilégier la qualité
+            glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);
+            glHint(GL_POLYGON_SMOOTH_HINT, GL_NICEST);
+            System.out.println("Configuration qualité pour GPU dédié");
+        }
+        
+        // Note: Les techniques d'antialiasing avancées (FXAA, TAA) nécessiteraient
+        // un pipeline de post-processing avec framebuffers et shaders dédiés
+        // Cette fonctionnalité pourrait être implémentée dans une future version
+        if (Values.renderOptions.isAntialiasingEnabled()) {
+            glEnable(GL_MULTISAMPLE);
+        }
 
         // Couleur de fond
         glClearColor(0.5f, 0.8f, 1.0f, 1.0f);
@@ -129,6 +193,16 @@ public class Render {
         this.hotbar = hotbar;
         this.hotbarRenderer = new HotbarRenderer(hotbar, shader);
     }
+    
+    public void setRenderOptions(ovh.paulem.mc.engine.RenderOptions options) {
+        // Cette méthode permet de gérer les changements d'options de rendu
+        // Pour l'instant, les options sont accessibles via Values.renderOptions
+        // Mais cette méthode peut être étendue pour gérer des mises à jour spécifiques
+        if (options != null) {
+            // Invalider le cache de mesh si la distance LOD change
+            this.meshCache.clear();
+        }
+    }
 
     public void render(Window window, float frameDt) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -150,7 +224,7 @@ public class Render {
         if (world != null) {
             // Rebuild up to a small number of chunk meshes per frame to avoid spikes
             int rebuilt = 0;
-            while (rebuilt < Values.MESHES_PER_FRAME_BUDGET && !meshBuildQueue.isEmpty()) {
+            while (rebuilt < Values.getMeshesPerFrameBudget() && !meshBuildQueue.isEmpty()) {
                 BaseChunk qc = meshBuildQueue.pollFirst();
                 if (qc == null) break;
                 // Determine greedy based on current camera distance
@@ -159,7 +233,7 @@ public class Render {
                 float qdx = camera.getPosition().x - qccx;
                 float qdz = camera.getPosition().z - qccz;
                 float qdist = (float)Math.sqrt(qdx * qdx + qdz * qdz);
-                boolean qGreedy = qdist > Values.GREEDY_DIST;
+                boolean qGreedy = qdist > Values.getGreedyDistance();
                 int qver = qc.getVersion();
                 // Lancer la génération du mesh en tâche asynchrone si pas déjà en cours
                 if (!meshFutures.containsKey(qc)) {
@@ -205,15 +279,15 @@ public class Render {
                 float dx = camX - chunkCenterX;
                 float dz = camZ - chunkCenterZ;
                 float dist = (float) Math.sqrt(dx * dx + dz * dz);
-                boolean useGreedy = dist > Values.GREEDY_DIST;
+                boolean useGreedy = dist > Values.getGreedyDistance();
 
                 ChunkMesh cm = meshCache.get(c);
                 int ver = c.getVersion();
                 boolean needRebuild = (cm == null || cm.greedy != useGreedy || cm.version != ver);
                 if (needRebuild) {
-                    // enqueue if not already queued or en cours de génération
+                    // Ajouter avec priorité basée sur la distance (chunks proches en premier)
                     if (!meshBuildQueue.contains(c) && !meshFutures.containsKey(c)) {
-                        meshBuildQueue.addLast(c);
+                        addChunkWithPriority(c, dist);
                     }
                 }
                 if (cm == null) {
@@ -611,9 +685,57 @@ public class Render {
     private record MeshBuildResult(RawMeshData raw, boolean greedy, int version) {
     }
 
-    // Arrêt du thread pool à la fermeture
+    // Arrêt propre du thread pool avec gestion des timeouts
+    /**
+     * Ajoute un chunk à la queue avec priorité basée sur la distance
+     * Les chunks proches du joueur sont traités en premier
+     */
+    private void addChunkWithPriority(BaseChunk chunk, float distance) {
+        if (distance < Values.getGreedyDistance() * 0.5f) {
+            // Chunk très proche - priorité maximale (début de queue)
+            meshBuildQueue.addFirst(chunk);
+        } else if (distance < Values.getGreedyDistance()) {
+            // Chunk proche - priorité normale (ajouter au début si queue petite, sinon fin)
+            if (meshBuildQueue.size() < 5) {
+                meshBuildQueue.addFirst(chunk);
+            } else {
+                meshBuildQueue.addLast(chunk);
+            }
+        } else {
+            // Chunk lointain - priorité faible (fin de queue)
+            meshBuildQueue.addLast(chunk);
+        }
+    }
+    
+    /**
+     * Note sur l'implémentation future d'un cache de chunks sur disque :
+     * Un système de cache pourrait sauvegarder les meshes générés sur disque
+     * pour éviter la regénération lors du rechargement des chunks.
+     * Structure suggérée : cache/chunks/{worldName}/{chunkX}_{chunkZ}_{version}.mesh
+     * avec compression LZ4 pour réduire la taille des fichiers.
+     */
+    
     public void shutdown() {
+        // Annuler tous les futures en cours pour éviter l'accumulation
+        for (Future<MeshBuildResult> future : meshFutures.values()) {
+            if (!future.isDone()) {
+                future.cancel(true);
+            }
+        }
+        meshFutures.clear();
+        
+        // Arrêt propre de l'executor avec timeout
         meshExecutor.shutdown();
+        try {
+            if (!meshExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                System.err.println("Arrêt forcé de l'executor de mesh");
+                meshExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            meshExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+        
         textureAtlas.cleanup();
     }
 
