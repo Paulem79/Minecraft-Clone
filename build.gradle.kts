@@ -5,7 +5,7 @@ import org.panteleyev.jpackage.JPackageTask
 plugins {
     java
     application
-    id("org.panteleyev.jpackageplugin") version "1.7.6"
+    id("org.panteleyev.jpackageplugin") version "2.1.0"
 }
 
 group = "ovh.paulem.mc"
