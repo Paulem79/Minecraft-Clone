@@ -19,7 +19,7 @@ dependencies {
     implementation("org.joml:joml:1.10.8")
 
     // BOM pour gérer les versions LWJGL
-    implementation(platform("org.lwjgl:lwjgl-bom:3.3.6"))
+    implementation(platform("org.lwjgl:lwjgl-bom:3.4.3"))
 
     // Lombok
     implementation("org.projectlombok:lombok:1.18.42")
