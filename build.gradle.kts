@@ -22,8 +22,8 @@ dependencies {
     implementation(platform("org.lwjgl:lwjgl-bom:3.3.6"))
 
     // Lombok
-    implementation("org.projectlombok:lombok:1.18.42")
-    annotationProcessor("org.projectlombok:lombok:1.18.42")
+    implementation("org.projectlombok:lombok:1.18.48")
+    annotationProcessor("org.projectlombok:lombok:1.18.48")
 
     // Artefacts Java
     implementation("org.lwjgl:lwjgl")
